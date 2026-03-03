@@ -1,9 +1,8 @@
 """
 OpenAI SDK implementation for image generation
 
-Supports multiple resolution parameter formats for different OpenAI-compatible providers:
-- Flat style: extra_body.aspect_ratio + extra_body.resolution
-- Nested style: extra_body.generationConfig.imageConfig.aspectRatio + imageSize
+Uses standard OpenAI-compatible format for maximum compatibility with various providers.
+Resolution and aspect ratio control depends on the provider's implementation.
 
 Note: Not all providers support 2K/4K resolution in OpenAI format.
 Some may only return 1K regardless of settings.
@@ -27,12 +26,8 @@ class OpenAIImageProvider(ImageProvider):
     """
     Image generation using OpenAI SDK (compatible with Gemini via proxy)
     
-    Supports multiple resolution parameter formats for different providers.
-    Resolution support varies by provider:
-    - Some providers support 2K/4K via extra_body parameters
-    - Some providers only support 1K regardless of settings
-    
-    The provider will try multiple parameter formats to maximize compatibility.
+    Uses standard OpenAI format for maximum compatibility with various providers.
+    Resolution support varies by provider - some may only support 1K regardless of settings.
     """
     
     def __init__(self, api_key: str, api_base: str = None, model: str = "gemini-3-pro-image-preview"):
@@ -70,41 +65,6 @@ class OpenAIImageProvider(ImageProvider):
         image.save(buffered, format="JPEG", quality=95)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
     
-    def _build_extra_body(self, aspect_ratio: str, resolution: str) -> dict:
-        """
-        Build extra_body parameters for resolution control.
-        
-        Uses multiple format strategies to support different providers:
-        1. Flat style: aspect_ratio + resolution at top level
-        2. Nested style: generationConfig.imageConfig structure
-        
-        Args:
-            aspect_ratio: Image aspect ratio (e.g., "16:9", "9:16")
-            resolution: Image resolution ("1K", "2K", "4K")
-            
-        Returns:
-            Dict with extra_body parameters
-        """
-        # Ensure resolution is uppercase (some providers require "4K" not "4k")
-        resolution_upper = resolution.upper()
-        
-        # Build comprehensive extra_body that works with multiple providers
-        extra_body = {
-            # Flat style parameters
-            "aspect_ratio": aspect_ratio,
-            "resolution": resolution_upper,
-            
-            # Nested style structure (compatible with some providers)
-            "generationConfig": {
-                "imageConfig": {
-                    "aspectRatio": aspect_ratio,
-                    "imageSize": resolution_upper,
-                }
-            }
-        }
-        
-        return extra_body
-
     def generate_image(
         self,
         prompt: str,
@@ -117,18 +77,14 @@ class OpenAIImageProvider(ImageProvider):
         """
         Generate image using OpenAI SDK
         
-        Supports resolution control via extra_body parameters for compatible providers.
+        Uses standard OpenAI format for maximum compatibility with various providers.
         Note: Not all providers support 2K/4K resolution - some may return 1K regardless.
         Note: enable_thinking and thinking_budget are ignored (OpenAI format doesn't support thinking mode)
-        
-        The provider will:
-        1. Try to use extra_body parameters (API易/AvalAI style) for resolution control
-        2. Use system message for aspect_ratio as fallback
         
         Args:
             prompt: The image generation prompt
             ref_images: Optional list of reference images
-            aspect_ratio: Image aspect ratio
+            aspect_ratio: Image aspect ratio (passed in system message for compatibility)
             resolution: Image resolution ("1K", "2K", "4K") - support depends on provider
             enable_thinking: Ignored, kept for interface compatibility
             thinking_budget: Ignored, kept for interface compatibility
@@ -157,19 +113,13 @@ class OpenAIImageProvider(ImageProvider):
             logger.debug(f"Calling OpenAI API for image generation with {len(ref_images) if ref_images else 0} reference images...")
             logger.debug(f"Config - aspect_ratio: {aspect_ratio}, resolution: {resolution}")
             
-            # Build extra_body with resolution parameters for compatible providers
-            extra_body = self._build_extra_body(aspect_ratio, resolution)
-            logger.debug(f"Using extra_body for resolution control: {extra_body}")
-            
-            # Use both system message (for basic providers) and extra_body (for advanced providers)
+            # Use standard OpenAI format for maximum compatibility
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": f"aspect_ratio={aspect_ratio}, resolution={resolution}"},
                     {"role": "user", "content": content},
-                ],
-                modalities=["text", "image"],
-                extra_body=extra_body
+                ]
             )
             
             logger.debug("OpenAI API call completed")
