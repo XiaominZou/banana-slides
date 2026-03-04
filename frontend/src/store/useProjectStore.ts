@@ -86,6 +86,8 @@ interface ProjectState {
   warningMessage: string | null;
   // 流式大纲生成中
   isOutlineStreaming: boolean;
+  // 大纲生成进度
+  outlineGenerationProgress: { stage: string; message: string } | null;
 
   // Actions
   setCurrentProject: (project: Project | null) => void;
@@ -187,6 +189,7 @@ const debouncedUpdatePage = debounce(
   pageGeneratingTasks: {},
   warningMessage: null,
   isOutlineStreaming: false,
+  outlineGenerationProgress: null,
 
   // Setters
   setCurrentProject: (project) => set({ currentProject: project }),
@@ -625,7 +628,14 @@ const debouncedUpdatePage = debounce(
             const tempPage: any = {
               id: `streaming-${page.index}`,
               order_index: page.index,
-              outline_content: { title: page.title, points: page.points },
+              outline_content: { 
+                title: page.title, 
+                points: page.points,
+                elements: page.elements || [],
+                slide_type: page.slide_type,
+                layout_style: page.layout_style,
+                layout_variant: page.layout_variant,
+              },
               part: page.part,
               status: 'DRAFT',
             };
@@ -648,6 +658,14 @@ const debouncedUpdatePage = debounce(
       await api.generateOutlineStream(currentProject.id!, {
         onPage: (page) => { pageQueue.push(page); },
         onDone: (data) => { doneData = data; },
+        onProgress: (stage, message) => {
+          console.log('[流式大纲] 进度:', stage, message);
+          set({ outlineGenerationProgress: { stage, message } });
+        },
+        onWarning: (message, fallback) => {
+          console.warn('[流式大纲] 警告:', message, fallback);
+          set({ warningMessage: message });
+        },
         onError: (message) => {
           console.error('[流式大纲] 错误:', message);
           set({ error: normalizeErrorMessage(message), isOutlineStreaming: false });
@@ -663,12 +681,12 @@ const debouncedUpdatePage = debounce(
         const { currentProject: proj } = get();
         if (proj) {
           const normalized = normalizeProject({ ...proj, pages: doneData.pages });
-          set({ currentProject: normalized, isOutlineStreaming: false });
+          set({ currentProject: normalized, isOutlineStreaming: false, outlineGenerationProgress: null });
         }
         devLog('[流式大纲] 完成:', doneData.total, '个页面');
         return { complete: doneData.complete ?? false };
       } else {
-        set({ isOutlineStreaming: false });
+        set({ isOutlineStreaming: false, outlineGenerationProgress: null });
         return { complete: false };
       }
     } catch (error: any) {
@@ -677,6 +695,7 @@ const debouncedUpdatePage = debounce(
       set({
         error: normalizeErrorMessage(error.message || t('store.generateOutlineFailed')),
         isOutlineStreaming: false,
+        outlineGenerationProgress: null,
       });
       throw error;
     }

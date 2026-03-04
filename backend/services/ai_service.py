@@ -461,6 +461,139 @@ class AIService:
         # Yield completion sentinel
         yield {'__stream_complete__': stream_complete}
     
+    def generate_outline_stream_with_agent(
+        self,
+        project_context: ProjectContext,
+        language: str = None,
+    ):
+        """
+        Stream outline generation using the advanced Plan Agent.
+        
+        Falls back to simple generation if agent fails and OUTLINE_AGENT_FALLBACK is True.
+        
+        Yields dicts:
+        - Progress: {"__progress__": {"stage": "...", "message": "..."}}
+        - Page: {"title": ..., "points": [...], "part": ...}
+        - Complete: {"__stream_complete__": True}
+        """
+        from flask import current_app
+        from services.ppt_outline_agent.wrapper import (
+            generate_outline_single_shot_sync,
+            convert_outline_to_pages,
+        )
+        
+        # 检查是否启用 agent
+        use_agent = current_app.config.get('USE_OUTLINE_AGENT', True)
+        
+        if not use_agent:
+            logger.info("Outline agent disabled, using simple generation")
+            yield from self.generate_outline_stream(project_context, language)
+            return
+        
+        # 尝试使用 agent
+        try:
+            logger.info("Using advanced outline agent for generation")
+            
+            # 构建用户请求
+            user_request = project_context.idea_prompt or ""
+            if project_context.outline_requirements:
+                user_request += f"\n\n要求：{project_context.outline_requirements}"
+            
+            # 获取超时配置
+            timeout = current_app.config.get('OUTLINE_AGENT_TIMEOUT', 120)
+            
+            # 使用队列实现实时进度发送
+            import queue
+            progress_queue = queue.Queue()
+            
+            def progress_callback(stage: str, message: str):
+                """接收进度回调并立即放入队列"""
+                progress_queue.put({'__progress__': {'stage': stage, 'message': message}})
+                logger.info(f"Agent progress [{stage}]: {message}")
+            
+            # 在后台线程中启动 agent，同时持续 yield 进度事件
+            import threading
+            result_container = {'outline': None, 'error': None}
+            
+            def run_agent():
+                try:
+                    outline_dict = generate_outline_single_shot_sync(
+                        user_request=user_request,
+                        topic=project_context.idea_prompt,
+                        enable_research=True,
+                        timeout=timeout,
+                        progress_callback=progress_callback,
+                        language=language,
+                    )
+                    result_container['outline'] = outline_dict
+                    progress_queue.put({'__agent_done__': True})
+                except Exception as e:
+                    logger.error(f"Agent execution failed: {e}", exc_info=True)
+                    result_container['error'] = e
+                    progress_queue.put({'__agent_error__': True, 'error': str(e)})
+            
+            # 启动 agent 线程
+            agent_thread = threading.Thread(target=run_agent, daemon=True)
+            agent_thread.start()
+            
+            # 持续 yield 进度事件，直到 agent 完成
+            while True:
+                try:
+                    item = progress_queue.get(timeout=0.5)
+                    yield item
+                    # 检查是否 agent 完成或出错
+                    if '__agent_done__' in item or '__agent_error__' in item:
+                        break
+                except queue.Empty:
+                    # 检查 agent 线程是否仍在运行
+                    if not agent_thread.is_alive():
+                        break
+            
+            # 等待 agent 线程结束
+            agent_thread.join()
+            
+            # 检查 agent 是否出错
+            if result_container['error']:
+                raise Exception(result_container['error'])
+            
+            outline_dict = result_container['outline']
+
+            if not outline_dict:
+                raise Exception("Agent failed to generate outline")
+
+            logger.info(f"Agent returned outline_dict type: {type(outline_dict)}")
+            logger.info(f"Agent returned outline_dict keys: {list(outline_dict.keys()) if isinstance(outline_dict, dict) else 'N/A'}")
+
+            if isinstance(outline_dict, dict):
+                logger.info(f"Agent returned title: {outline_dict.get('title', 'N/A')}")
+                logger.info(f"Agent returned total_slides: {outline_dict.get('total_slides', 'N/A')}")
+                logger.info(f"Agent returned slides count: {len(outline_dict.get('slides', []))}")
+
+            # 转换格式
+            pages = convert_outline_to_pages(outline_dict)
+            
+            logger.info(f"Agent generated {len(pages)} pages")
+            
+            # 返回页面
+            for page in pages:
+                yield page
+            
+            # 发送完成标记
+            yield {'__stream_complete__': True}
+            
+        except Exception as e:
+            logger.error(f"Agent generation failed: {e}", exc_info=True)
+            
+            # 检查是否降级
+            fallback = current_app.config.get('OUTLINE_AGENT_FALLBACK', True)
+            
+            if fallback:
+                logger.warning("Falling back to simple outline generation")
+                yield {'__agent_fallback__': True, 'reason': str(e)}
+                yield from self.generate_outline_stream(project_context, language)
+            else:
+                raise Exception(f"Agent generation failed and fallback disabled: {e}")
+    
     def parse_outline_text(self, project_context: ProjectContext, language: str = None) -> List[Dict]:
         """
         Parse user-provided outline text into structured outline format

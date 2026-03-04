@@ -358,6 +358,53 @@ Now parse the outline text above into the structured format. Return only the JSO
     return final_prompt
 
 
+def _build_elements_guidance(page_outline: dict) -> str:
+    """
+    简化版：只提示元素类型，不展开具体数据
+    结构化数据会直接复制到 description_content.elements 中，供前端展示
+    
+    Args:
+        page_outline: 页面大纲数据
+        
+    Returns:
+        元素提示文本，如果没有特殊元素则返回空字符串
+    """
+    elements = page_outline.get('elements', [])
+    if not elements:
+        return ""
+    
+    element_types = []
+    for el in elements:
+        el_type = el.get('type', '')
+        
+        if el_type == 'chart':
+            chart_type = el.get('chart_type', 'bar')
+            chart_type_names = {'bar': '柱状图', 'line': '折线图', 'pie': '饼图', 'area': '面积图', 'scatter': '散点图'}
+            chart_name = chart_type_names.get(chart_type, '图表')
+            element_types.append(chart_name)
+        elif el_type == 'table':
+            element_types.append('表格')
+        elif el_type == 'image':
+            diagram_type = el.get('diagram_type', '')
+            diagram_names = {
+                'architecture': '架构图',
+                'flowchart': '流程图',
+                'mindmap': '思维导图',
+                'sequence': '时序图',
+                'timeline': '时间线'
+            }
+            name = diagram_names.get(diagram_type, '图片') if diagram_type else '图片'
+            element_types.append(name)
+        elif el_type == 'kpi':
+            element_types.append('KPI指标')
+    
+    if element_types:
+        unique_types = list(dict.fromkeys(element_types))
+        return f"\n## 页面元素提示\n本页包含: {', '.join(unique_types)}\n（结构化数据已单独保存，文字描述可简要提及关键信息）\n"
+    
+    return ""
+
+
 def get_page_description_prompt(project_context: 'ProjectContext', outline: list,
                                 page_outline: dict, page_index: int,
                                 part_info: str = "",
@@ -399,6 +446,7 @@ def get_page_description_prompt(project_context: 'ProjectContext', outline: list
             '忠于原文的基础上做到内容详实，逻辑清晰。',
     }
     
+    elements_guidance = _build_elements_guidance(page_outline)
     
     prompt = (f"""\
 我们正在为PPT的每一页生成内容描述。
@@ -406,6 +454,7 @@ def get_page_description_prompt(project_context: 'ProjectContext', outline: list
 我们已经有了完整的大纲：\n{outline}\n{part_info}
 {_format_requirements(project_context.description_requirements)}现在请为第 {page_index} 页生成描述：
 {page_outline}
+{elements_guidance}
 {"**除非特殊要求，第一页的内容需要保持极简，只放标题副标题以及演讲人等（输出到标题后）, 不添加任何素材。**" if page_index == 1 else ""}
 
 ## 重要提示
@@ -542,47 +591,87 @@ def get_description_to_outline_prompt(project_context: 'ProjectContext', languag
     
     prompt = (f"""\
 You are a helpful assistant that analyzes a user-provided PPT description text and extracts the outline structure from it.
-
+ 
 The user has provided the following description text:
-
+ 
 {description_text}
-
+ 
 Your task is to analyze this text and extract the outline structure (titles and key points) for each page.
 You should identify:
 1. How many pages are described
 2. The title for each page
 3. The key points or content structure for each page
-
+4. Any visual elements mentioned (charts, tables, images, diagrams)
+ 
+For visual elements, include them in the "elements" array with appropriate types:
+- Charts: {{"type": "chart", "chart_type": "bar|line|pie|area|scatter", "content": "description"}}
+- Tables: {{"type": "table", "table_data": [["header1", "header2"], ["value1", "value2"]], "content": "description"}}
+- Images/Diagrams: {{"type": "image", "diagram_type": "architecture|flowchart|mindmap|sequence|timeline", "content": "description"}}
+ 
 You can organize the content in two ways:
-
+ 
 1. Simple format (for short PPTs without major sections):
-[{{"title": "title1", "points": ["point1", "point2"]}}, {{"title": "title2", "points": ["point1", "point2"]}}]
-
+[
+  {{
+    "title": "title1",
+    "points": ["point1", "point2"],
+    "elements": [
+      {{"type": "chart", "chart_type": "bar", "content": "..."}},
+      {{"type": "table", "table_data": [...], "content": "..."}}
+    ]
+  }},
+  {{
+    "title": "title2",
+    "points": ["point1", "point2"],
+    "elements": []
+  }}
+]
+ 
 2. Part-based format (for longer PPTs with major sections):
 [
     {{
     "part": "Part 1: Introduction",
     "pages": [
-        {{"title": "Welcome", "points": ["point1", "point2"]}},
-        {{"title": "Overview", "points": ["point1", "point2"]}}
+        {{
+            "title": "Welcome",
+            "points": ["point1", "point2"],
+            "elements": []
+        }},
+        {{
+            "title": "Overview",
+            "points": ["point1", "point2"],
+            "elements": [
+                {{"type": "image", "diagram_type": "architecture", "content": "..."}}
+            ]
+        }}
     ]
     }},
     {{
     "part": "Part 2: Main Content",
     "pages": [
-        {{"title": "Topic 1", "points": ["point1", "point2"]}},
-        {{"title": "Topic 2", "points": ["point1", "point2"]}}
+        {{
+            "title": "Topic 1",
+            "points": ["point1", "point2"],
+            "elements": []
+        }},
+        {{
+            "title": "Topic 2",
+            "points": ["point1", "point2"],
+            "elements": []
+        }}
     ]
     }}
 ]
-
+ 
 Important rules:
 - Extract the outline structure from the description text
 - Identify page titles and key points
+- Extract visual elements (charts, tables, images) if mentioned in the description
 - If the text has clear sections/parts, use the part-based format
 - Preserve the logical structure and organization from the original text
 - The points should be concise summaries of the main content for each page
-
+- If no visual elements are mentioned for a page, include an empty "elements" array
+ 
 Now extract the outline structure from the description text above. Return only the JSON, don't include any other text.
 {get_language_instruction(language)}
 """)

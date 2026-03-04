@@ -140,8 +140,10 @@ export interface OutlineStreamPage {
 
 export interface OutlineStreamCallbacks {
   onPage: (page: OutlineStreamPage) => void;
-  onDone: (data: { total: number; pages: Page[] }) => void;
+  onDone: (data: { total: number; pages: Page[]; agent_fallback?: boolean }) => void;
   onError: (message: string) => void;
+  onProgress?: (stage: string, message: string) => void;  // 进度回调
+  onWarning?: (message: string, fallback: boolean) => void;  // 警告回调
 }
 
 export const generateOutlineStream = async (
@@ -197,6 +199,12 @@ export const generateOutlineStream = async (
         if (eventType === 'page') callbacks.onPage(parsed);
         else if (eventType === 'done') callbacks.onDone(parsed);
         else if (eventType === 'error') callbacks.onError(parsed.message);
+        else if (eventType === 'progress' && callbacks.onProgress) {
+          callbacks.onProgress(parsed.stage, parsed.message);
+        }
+        else if (eventType === 'warning' && callbacks.onWarning) {
+          callbacks.onWarning(parsed.message, parsed.fallback);
+        }
       } catch {
         // Skip malformed events
       }

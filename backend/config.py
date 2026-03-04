@@ -1,9 +1,13 @@
 """
-Backend configuration file
+Backend configuration
 """
 import os
 import sys
 from datetime import timedelta
+from dotenv import load_dotenv
+
+# Load .env file from project root
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # 基础配置 - 使用更可靠的路径计算方式
 # 在模块加载时立即计算并固定路径
@@ -109,6 +113,25 @@ class Config:
 
     # 百度 API 配置（用于 OCR 和图像修复）
     BAIDU_API_KEY = os.getenv('BAIDU_API_KEY', '') or os.getenv('BAIDU_OCR_API_KEY', '')
+    
+    # PPT Outline Agent 配置
+    # 文本模型（复用现有配置或单独配置）
+    CHAT_MODEL_BASE_URL = os.getenv('CHAT_MODEL_BASE_URL', os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1'))
+    CHAT_MODEL_API_KEY = os.getenv('CHAT_MODEL_API_KEY', os.getenv('OPENAI_API_KEY', ''))
+    CHAT_MODEL_NAME = os.getenv('CHAT_MODEL_NAME', os.getenv('TEXT_MODEL', 'gpt-4o'))
+    
+    # 网络搜索
+    SEARCH_API_PROVIDER = os.getenv('SEARCH_API_PROVIDER', 'zhipu_mcp')  # tavily|serpapi|bing|baidu|zhipu_mcp
+    SEARCH_API_KEY = os.getenv('SEARCH_API_KEY', '')
+    
+    # 智谱 MCP 搜索
+    ZHIPU_MCP_URL = os.getenv('ZHIPU_MCP_URL', 'https://open.bigmodel.cn/api/mcp/web_search_prime/mcp')
+    ZHIPU_MCP_API_KEY = os.getenv('ZHIPU_MCP_API_KEY', '')
+    
+    # Agent 功能开关
+    USE_OUTLINE_AGENT = os.getenv('USE_OUTLINE_AGENT', 'true').lower() == 'true'
+    OUTLINE_AGENT_FALLBACK = os.getenv('OUTLINE_AGENT_FALLBACK', 'true').lower() == 'true'
+    OUTLINE_AGENT_TIMEOUT = int(os.getenv('OUTLINE_AGENT_TIMEOUT', '120'))  # 秒
 
 
 class DevelopmentConfig(Config):

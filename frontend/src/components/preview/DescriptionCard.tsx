@@ -1,11 +1,11 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Edit2, FileText, RefreshCw } from 'lucide-react';
+import { Edit2, FileText, RefreshCw, BarChart3, Table, Image, TrendingUp } from 'lucide-react';
 import { useT } from '@/hooks/useT';
 import { useImagePaste } from '@/hooks/useImagePaste';
 import { Card, ContextualStatusBadge, Button, Modal, Skeleton, Markdown } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
 import { useDescriptionGeneratingState } from '@/hooks/useGeneratingState';
-import type { Page, DescriptionContent } from '@/types';
+import type { Page, DescriptionContent, SlideElement } from '@/types';
 
 // DescriptionCard 组件自包含翻译
 const descriptionCardI18n = {
@@ -18,6 +18,11 @@ const descriptionCardI18n = {
       descriptionPlaceholder: "输入页面描述, 可包含页面文字、素材、排版设计等信息，支持粘贴图片",
       coverPage: "封面",
       coverPageTooltip: "第一页为封面页，默认保持简洁风格"
+    },
+    elements: {
+      sectionTitle: "页面元素",
+      labels: "标签",
+      table: "表格"
     }
   },
   en: {
@@ -29,6 +34,11 @@ const descriptionCardI18n = {
       descriptionPlaceholder: "Enter page description, can include page text, materials, layout design, etc., support pasting images",
       coverPage: "Cover",
       coverPageTooltip: "This is the cover page, default to keep simple style"
+    },
+    elements: {
+      sectionTitle: "Page Elements",
+      labels: "Labels",
+      table: "Table"
     }
   }
 };
@@ -54,6 +64,154 @@ const getDescriptionText = (descContent: DescriptionContent | undefined): string
   return '';
 };
 
+// 从 description_content 提取 elements
+const getDescriptionElements = (descContent: DescriptionContent | undefined): SlideElement[] => {
+  if (!descContent) return [];
+  if ('elements' in descContent && Array.isArray(descContent.elements)) {
+    return descContent.elements;
+  }
+  return [];
+};
+
+// 图表类型名称映射
+const chartTypeNames: Record<string, string> = {
+  bar: '柱状图',
+  line: '折线图',
+  pie: '饼图',
+  area: '面积图',
+  scatter: '散点图',
+};
+
+// 图表类型名称映射
+const diagramTypeNames: Record<string, string> = {
+  architecture: '架构图',
+  flowchart: '流程图',
+  mindmap: '思维导图',
+  sequence: '时序图',
+  timeline: '时间线',
+};
+
+// Elements 预览组件
+const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) => {
+  const t = useT(descriptionCardI18n);
+
+  if (!elements || elements.length === 0) return null;
+
+  const renderElement = (el: SlideElement, idx: number) => {
+    const elType = el.type;
+
+    if (elType === 'chart') {
+      const chartName = chartTypeNames[el.chart_type || 'bar'] || '图表';
+      const labels = el.chart_data?.labels || [];
+      const datasets = el.chart_data?.datasets || [];
+      return (
+        <div key={idx} className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-medium text-sm">
+            <BarChart3 size={16} />
+            <span>{chartName}{el.content ? `: ${el.content}` : ''}</span>
+          </div>
+          {labels.length > 0 && (
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              {t('elements.labels')}: {labels.join(', ')}
+            </div>
+          )}
+          {datasets.map((ds, i) => (
+            <div key={i} className="text-xs text-gray-600 dark:text-gray-400">
+              {ds.label}: [{ds.data.join(', ')}]
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (elType === 'table') {
+      const tableData = el.table_data || [];
+      if (tableData.length === 0) return null;
+      const headers = tableData[0] || [];
+      const rows = tableData.slice(1);
+      return (
+        <div key={idx} className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium text-sm">
+            <Table size={16} />
+            <span>{t('elements.table')}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  {headers.map((h, i) => (
+                    <th key={i} className="border border-gray-300 dark:border-gray-600 px-2 py-1 bg-gray-100 dark:bg-gray-800 text-left font-medium">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i}>
+                    {row.map((cell, j) => (
+                      <td key={j} className="border border-gray-300 dark:border-gray-600 px-2 py-1">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    if (elType === 'image') {
+      const diagramName = el.diagram_type ? (diagramTypeNames[el.diagram_type] || '图片') : '图片';
+      return (
+        <div key={idx} className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-purple-700 dark:text-purple-400 font-medium text-sm">
+            <Image size={16} />
+            <span>{diagramName}{el.content ? `: ${el.content}` : ''}</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (elType === 'kpi') {
+      return (
+        <div key={idx} className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-medium text-sm">
+            <TrendingUp size={16} />
+            <span>KPI: {el.kpi_label} = {el.kpi_value}</span>
+            {el.kpi_trend && (
+              <span className={`text-xs ${el.kpi_trend_color === 'green' ? 'text-green-600' : el.kpi_trend_color === 'red' ? 'text-red-600' : ''}`}>
+                {el.kpi_trend}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const visibleElements = elements.filter(el => 
+    ['chart', 'table', 'image', 'kpi'].includes(el.type)
+  );
+
+  if (visibleElements.length === 0) return null;
+
+  return (
+    <div className="mb-4 space-y-2">
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        {t('elements.sectionTitle')}
+      </div>
+      <div className="space-y-2">
+        {visibleElements.map((el, idx) => renderElement(el, idx))}
+      </div>
+    </div>
+  );
+};
+
 export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   page,
   index,
@@ -66,6 +224,7 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   const t = useT(descriptionCardI18n);
 
   const text = getDescriptionText(page.description_content);
+  const elements = getDescriptionElements(page.description_content);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -94,10 +253,14 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   };
 
   const handleSave = () => {
-    // 保存时使用 text 格式（后端期望的格式）
+    const currentDesc = page.description_content as any;
+    const existingElements = currentDesc?.elements || [];
+    
     onUpdate({
       description_content: {
         text: editContent,
+        elements: existingElements,
+        generated_at: currentDesc?.generated_at,
       } as DescriptionContent,
     });
     setIsEditing(false);
@@ -140,10 +303,15 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
                 {t('common.generating')}
               </div>
             </div>
-          ) : text ? (
-            <div className="text-sm text-gray-700 dark:text-foreground-secondary">
-              <Markdown>{text}</Markdown>
-            </div>
+          ) : (text || elements.length > 0) ? (
+            <>
+              <ElementsPreview elements={elements} />
+              {text && (
+                <div className="text-sm text-gray-700 dark:text-foreground-secondary">
+                  <Markdown>{text}</Markdown>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-8 text-gray-400 dark:text-foreground-tertiary">
               <div className="flex text-3xl mb-2 justify-center"><FileText className="text-gray-400 dark:text-foreground-tertiary" size={48} /></div>
@@ -212,5 +380,6 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   prev.page.id === next.page.id &&
   prev.page.status === next.page.status &&
   prev.page.part === next.page.part &&
-  getDescriptionText(prev.page.description_content) === getDescriptionText(next.page.description_content)
+  getDescriptionText(prev.page.description_content) === getDescriptionText(next.page.description_content) &&
+  JSON.stringify(getDescriptionElements(prev.page.description_content)) === JSON.stringify(getDescriptionElements(next.page.description_content))
 );

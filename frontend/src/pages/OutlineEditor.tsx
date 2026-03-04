@@ -89,6 +89,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button, Loading, useConfirm, useToast, AiRefineInput, FilePreviewModal, ReferenceFileList } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
 import { OutlineCard } from '@/components/outline/OutlineCard';
+import { OutlineGenerationProgress } from '@/components/ProgressIndicator';
 import { useProjectStore } from '@/store/useProjectStore';
 import { refineOutline, updateProject, addPage } from '@/api/endpoints';
 import { useImagePaste } from '@/hooks/useImagePaste';
@@ -137,11 +138,12 @@ export const OutlineEditor: React.FC = () => {
     saveAllPages,
     reorderPages,
     deletePageById,
-    addNewPage,
-    generateOutlineStream,
-    isGlobalLoading,
-    isOutlineStreaming,
-  } = useProjectStore();
+     addNewPage,
+     generateOutlineStream,
+     isGlobalLoading,
+     isOutlineStreaming,
+     outlineGenerationProgress,
+   } = useProjectStore();
 
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [isAiRefining, setIsAiRefining] = useState(false);
@@ -730,6 +732,12 @@ export const OutlineEditor: React.FC = () => {
 
         {/* 右侧：大纲列表 */}
         <div className="flex-1 min-w-0">
+          {/* 进度显示 */}
+          <OutlineGenerationProgress 
+            progress={outlineGenerationProgress} 
+            isStreaming={isOutlineStreaming} 
+          />
+          
           {currentProject.pages.length === 0 && !isOutlineStreaming ? (
             <div className="text-center py-12 md:py-20">
               <div className="flex justify-center mb-4">

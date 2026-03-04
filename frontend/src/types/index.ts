@@ -8,19 +8,47 @@ export type ProjectStatus = 'DRAFT' | 'OUTLINE_GENERATED' | 'DESCRIPTIONS_GENERA
 export interface OutlineContent {
   title: string;
   points: string[];
+  elements?: SlideElement[];  // 完整元素信息
+  slide_type?: string;
+  layout_style?: string;
+  layout_variant?: string;
+}
+
+// 幻灯片元素类型
+export interface SlideElement {
+  type: 'title' | 'subtitle' | 'text' | 'bullet_list' | 'table' | 'image' | 'chart' | 'kpi';
+  content?: string;
+  bullet_items?: string[];
+  table_data?: string[][];
+  chart_type?: 'bar' | 'line' | 'pie' | 'scatter' | 'area';
+  chart_data?: {
+    labels: string[];
+    datasets: Array<{
+      label: string;
+      data: number[];
+    }>;
+  };
+  image_url?: string;
+  image_prompt?: string;
+  diagram_type?: string;
+  kpi_value?: string;
+  kpi_label?: string;
+  kpi_trend?: string;
+  kpi_trend_color?: string;
 }
 
 // 描述内容 - 支持两种格式：后端可能返回纯文本或结构化内容
 export type DescriptionContent = 
   | {
-      // 格式1: 后端返回的纯文本格式
       text: string;
+      elements?: SlideElement[];
+      generated_at?: string;
     }
   | {
-      // 格式2: 类型定义中的结构化格式
       title: string;
       text_content: string[];
       layout_suggestion?: string;
+      elements?: SlideElement[];
     };
 
 // 图片版本

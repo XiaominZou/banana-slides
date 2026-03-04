@@ -80,6 +80,13 @@ def create_app():
     
     # Initialize logging (log to stdout so Docker can capture it)
     log_level = getattr(logging, app.config['LOG_LEVEL'], logging.INFO)
+    
+    # Set UTF-8 encoding for Windows console to handle emoji characters
+    if sys.platform == 'win32':
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",

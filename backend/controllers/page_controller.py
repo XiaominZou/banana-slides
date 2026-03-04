@@ -91,6 +91,9 @@ def delete_page(project_id, page_id):
         if not page or page.project_id != project_id:
             return not_found('Page')
 
+        # Get the order_index of the page to be deleted
+        deleted_order_index = page.order_index
+        
         # Delete page image if exists
         file_service = FileService(current_app.config['UPLOAD_FOLDER'])
         file_service.delete_page_image(project_id, page_id)
@@ -98,6 +101,15 @@ def delete_page(project_id, page_id):
         # Delete page
         db.session.delete(page)
 
+        # Reorder remaining pages to maintain consecutive order_index
+        remaining_pages = Page.query.filter_by(project_id=project_id)\
+            .filter(Page.order_index > deleted_order_index)\
+            .order_by(Page.order_index)\
+            .all()
+        
+        for remaining_page in remaining_pages:
+            remaining_page.order_index = remaining_page.order_index - 1
+        
         # Update project
         project = Project.query.get(project_id)
         if project:
@@ -305,6 +317,11 @@ def generate_page_description(project_id, page_id):
             "text": desc_text,
             "generated_at": datetime.utcnow().isoformat()
         }
+        
+        # Copy elements from outline_content to preserve structured data
+        outline_content = page.get_outline_content()
+        if outline_content and 'elements' in outline_content:
+            desc_content['elements'] = outline_content['elements']
         
         page.set_description_content(desc_content)
         page.status = 'DESCRIPTION_GENERATED'

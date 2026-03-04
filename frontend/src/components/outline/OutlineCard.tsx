@@ -4,7 +4,7 @@ import { useT } from '@/hooks/useT';
 import { useImagePaste } from '@/hooks/useImagePaste';
 import { Card, useConfirm, Markdown, ShimmerOverlay } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
-import type { Page } from '@/types';
+import type { Page, SlideElement } from '@/types';
 
 // OutlineCard 组件自包含翻译
 const outlineCardI18n = {
@@ -15,7 +15,11 @@ const outlineCardI18n = {
       confirmDeleteTitle: "确认删除",
       uploadingImage: "正在上传图片...",
       coverPage: "封面",
-      coverPageTooltip: "第一页为封面页，通常包含标题和副标题"
+      coverPageTooltip: "第一页为封面页，通常包含标题和副标题",
+      table: "表格",
+      chart: "图表",
+      image: "图片",
+      kpi: "指标"
     }
   },
   en: {
@@ -25,8 +29,78 @@ const outlineCardI18n = {
       confirmDeleteTitle: "Confirm Delete",
       uploadingImage: "Uploading image...",
       coverPage: "Cover",
-      coverPageTooltip: "This is the cover page, usually containing the title and subtitle"
+      coverPageTooltip: "This is the cover page, usually containing the title and subtitle",
+      table: "Table",
+      chart: "Chart",
+      image: "Image",
+      kpi: "KPI"
     }
+  }
+};
+
+// 元素预览组件
+const ElementPreview: React.FC<{ element: SlideElement; t: any }> = ({ element, t }) => {
+  switch (element.type) {
+    case 'table':
+      return (
+        <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+          <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+            📊 {t('outlineCard.table')}
+          </div>
+          {element.table_data && element.table_data.length > 0 && (
+            <>
+              <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                {element.table_data[0]?.join(' | ') || ''}
+              </div>
+              {element.table_data.slice(1, 3).map((row: string[], i: number) => (
+                <div key={i} className="text-xs text-gray-500 dark:text-gray-500">
+                  {row.join(' | ')}
+                </div>
+              ))}
+              {element.table_data.length > 3 && (
+                <div className="text-xs text-gray-400 dark:text-gray-600 mt-1">
+                  +{element.table_data.length - 3} rows...
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      );
+    
+    case 'chart':
+      return (
+        <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+          <div className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+            📈 {element.chart_type} {t('outlineCard.chart')}: {element.content || ''}
+          </div>
+        </div>
+      );
+    
+    case 'image':
+      return (
+        <div className="mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
+          <div className="text-xs font-semibold text-purple-700 dark:text-purple-400">
+            🖼️ {element.diagram_type || t('outlineCard.image')}: {element.content || element.image_prompt || ''}
+          </div>
+        </div>
+      );
+    
+    case 'kpi':
+      return (
+        <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+          <div className="text-sm font-bold text-green-700 dark:text-green-400">
+            {element.kpi_value} <span className="text-xs font-normal">{element.kpi_label}</span>
+          </div>
+          {element.kpi_trend && (
+            <div className="text-xs text-green-600 dark:text-green-500">
+              {element.kpi_trend}
+            </div>
+          )}
+        </div>
+      );
+    
+    default:
+      return null;
   }
 };
 
@@ -58,6 +132,7 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
   const t = useT(outlineCardI18n);
   const { confirm, ConfirmDialog } = useConfirm();
   const outline = page.outline_content ?? { title: '', points: [] as string[] };
+  const elements = (page.outline_content as any)?.elements || [];
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(outline.title);
   const [editPoints, setEditPoints] = useState(outline.points.join('\n'));
@@ -86,10 +161,20 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
   }, [outline.title, outline.points, page.part, isEditing]);
 
   const handleSave = () => {
+    const currentOutline = page.outline_content as any;
+    const existingElements = currentOutline?.elements || [];
+    const existingSlideType = currentOutline?.slide_type;
+    const existingLayoutStyle = currentOutline?.layout_style;
+    const existingLayoutVariant = currentOutline?.layout_variant;
+    
     onUpdate({
       outline_content: {
         title: editTitle,
         points: editPoints.split('\n').filter((p) => p.trim()),
+        elements: existingElements,
+        slide_type: existingSlideType,
+        layout_style: existingLayoutStyle,
+        layout_variant: existingLayoutVariant,
       },
       part: editPart.trim() || undefined,
     });
@@ -199,9 +284,20 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
               <h4 className="font-semibold text-gray-900 dark:text-foreground-primary mb-2">
                 {outline.title}
               </h4>
-              <div className="text-gray-600 dark:text-foreground-tertiary">
+              
+              {/* 展示要点 */}
+              <div className="text-gray-600 dark:text-foreground-tertiary mb-2">
                 <Markdown>{outline.points.join('\n')}</Markdown>
               </div>
+              
+              {/* 展示元素预览 */}
+              {elements.length > 0 && (
+                <div className="space-y-1">
+                  {elements.map((element: SlideElement, idx: number) => (
+                    <ElementPreview key={idx} element={element} t={t} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

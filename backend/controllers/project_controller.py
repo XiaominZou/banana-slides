@@ -147,10 +147,24 @@ def _smart_merge_pages(project_id, pages_data):
 
         page.order_index = i
         page.part = page_data.get('part')
-        page.set_outline_content({
+        
+        # 保存完整的大纲内容（包含 elements）
+        outline_content = {
             'title': page_data.get('title'),
-            'points': page_data.get('points', [])
-        })
+            'points': page_data.get('points', []),
+        }
+        
+        # 如果有 elements，添加到 outline_content
+        if 'elements' in page_data:
+            outline_content['elements'] = page_data['elements']
+        if 'slide_type' in page_data:
+            outline_content['slide_type'] = page_data['slide_type']
+        if 'layout_style' in page_data:
+            outline_content['layout_style'] = page_data['layout_style']
+        if 'layout_variant' in page_data:
+            outline_content['layout_variant'] = page_data['layout_variant']
+        
+        page.set_outline_content(outline_content)
         pages_list.append(page)
 
     for p in old_pages:
@@ -552,22 +566,58 @@ def generate_outline_stream(project_id):
 
                 project_context = ProjectContext(proj, reference_files_content)
 
-                # Stream pages from AI
+                # Stream pages from AI (using agent with fallback)
                 streamed_pages = []
                 stream_complete = False
-                for page_data in ai_service.generate_outline_stream(project_context, language=language):
+                agent_fallback = False
+                
+                for page_data in ai_service.generate_outline_stream_with_agent(project_context, language=language):
+                    # Check for progress event
+                    if '__progress__' in page_data:
+                        progress = page_data['__progress__']
+                        yield _sse_event('progress', {
+                            'stage': progress.get('stage', ''),
+                            'message': progress.get('message', ''),
+                        })
+                        continue
+                    
+                    # Check for fallback marker
+                    if '__agent_fallback__' in page_data:
+                        agent_fallback = True
+                        # Send fallback notification
+                        yield _sse_event('warning', {
+                            'message': f'高级大纲生成遇到问题，已自动降级到简单模式',
+                            'fallback': True,
+                        })
+                        continue
+                    
                     # Check for completion sentinel
                     if '__stream_complete__' in page_data:
                         stream_complete = page_data['__stream_complete__']
                         continue
+                    
                     i = len(streamed_pages)
                     streamed_pages.append(page_data)
-                    yield _sse_event('page', {
+                    
+                    # 构建 SSE 事件数据，包含完整元素信息
+                    sse_data = {
                         'index': i,
                         'title': page_data.get('title', ''),
                         'points': page_data.get('points', []),
                         'part': page_data.get('part'),
-                    })
+                    }
+                    
+                    # 如果有 elements，添加到 SSE 数据
+                    if 'elements' in page_data:
+                        sse_data['elements'] = page_data['elements']
+                    if 'slide_type' in page_data:
+                        sse_data['slide_type'] = page_data['slide_type']
+                    if 'layout_style' in page_data:
+                        sse_data['layout_style'] = page_data['layout_style']
+                    if 'layout_variant' in page_data:
+                        sse_data['layout_variant'] = page_data['layout_variant']
+                    
+                    yield _sse_event('page', sse_data)
 
                 # Save all pages to database
                 pages_list = _smart_merge_pages(project_id, streamed_pages)
@@ -579,12 +629,13 @@ def generate_outline_stream(project_id):
                 proj.updated_at = datetime.utcnow()
                 db.session.commit()
 
-                logger.info(f"流式大纲生成完成: 项目 {project_id}, {len(pages_list)} 个页面")
+                logger.info(f"流式大纲生成完成: 项目 {project_id}, {len(pages_list)} 个页面, 降级: {agent_fallback}")
 
                 yield _sse_event('done', {
                     'total': len(pages_list),
                     'pages': [p.to_dict() for p in pages_list],
                     'complete': stream_complete,
+                    'agent_fallback': agent_fallback,  # 标记是否降级
                 })
 
             except Exception as e:
@@ -693,10 +744,22 @@ def generate_from_description(project_id):
             )
             
             # Set outline content
-            page.set_outline_content({
+            outline_content = {
                 'title': page_data.get('title'),
                 'points': page_data.get('points', [])
-            })
+            }
+            
+            # Defensively copy elements and other metadata
+            if 'elements' in page_data:
+                outline_content['elements'] = page_data['elements']
+            if 'slide_type' in page_data:
+                outline_content['slide_type'] = page_data['slide_type']
+            if 'layout_style' in page_data:
+                outline_content['layout_style'] = page_data['layout_style']
+            if 'layout_variant' in page_data:
+                outline_content['layout_variant'] = page_data['layout_variant']
+            
+            page.set_outline_content(outline_content)
             
             # Set description content
             desc_content = {
@@ -863,8 +926,9 @@ def generate_images(project_id):
         if use_template:
             ref_image_path = file_service.get_template_path(project_id)
         
-        if not ref_image_path and not project.template_style:
-            return bad_request("请先上传模板图片或添加风格描述。")
+        # 注释掉强制检查，允许没有模板图片也能生成
+        # if not ref_image_path and not project.template_style:
+        #     return bad_request("请先上传模板图片或添加风格描述。")
         
         # Reconstruct outline from pages with part structure
         outline = _reconstruct_outline_from_pages(pages)

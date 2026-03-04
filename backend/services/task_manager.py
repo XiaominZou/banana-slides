@@ -220,12 +220,13 @@ def generate_descriptions_task(task_id: str, project_id: str, ai_service,
                             detail_level=detail_level
                         )
                         
-                        # Parse description into structured format
-                        # This is a simplified version - you may want more sophisticated parsing
                         desc_content = {
                             "text": desc_text,
                             "generated_at": datetime.utcnow().isoformat()
                         }
+                        
+                        if 'elements' in page_outline:
+                            desc_content['elements'] = page_outline['elements']
                         
                         return (page_id, desc_content, None)
                     except Exception as e:
@@ -987,9 +988,18 @@ def process_ppt_renovation_task(task_id: str, project_id: str, ai_service,
                             points = content.get('points', [])
                             description = content.get('description', '')
 
+                            # 获取现有的 outline_content，保留 elements
+                            existing_outline = page_obj.get_outline_content() or {}
+                            
+                            # 合并新数据，保留现有 elements
                             page_obj.set_outline_content({
                                 'title': title,
-                                'points': points
+                                'points': points,
+                                # 保留现有的 elements（如果有）
+                                'elements': existing_outline.get('elements', []),
+                                'slide_type': existing_outline.get('slide_type'),
+                                'layout_style': existing_outline.get('layout_style'),
+                                'layout_variant': existing_outline.get('layout_variant'),
                             })
                             page_obj.set_description_content({
                                 "text": description,
