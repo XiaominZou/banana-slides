@@ -267,6 +267,19 @@ export const generatePageDescription = async (
 };
 
 /**
+ * 一键复用大纲生成描述
+ */
+export const reuseOutlineForDescription = async (
+  projectId: string,
+  pageId: string
+): Promise<ApiResponse<{ message: string; page: Page }>> => {
+  const response = await apiClient.post<ApiResponse<{ message: string; page: Page }>>(
+    `/api/projects/${projectId}/pages/${pageId}/reuse-outline`
+  );
+  return response.data;
+};
+
+/**
  * 重新生成 PPT 翻新项目的单页（重新解析原 PDF 并提取内容）
  */
 export const regenerateRenovationPage = async (

@@ -40,12 +40,13 @@ export interface SlideElement {
 // 描述内容 - 支持两种格式：后端可能返回纯文本或结构化内容
 export type DescriptionContent = 
   | {
+      title?: string;
       text: string;
       elements?: SlideElement[];
       generated_at?: string;
     }
   | {
-      title: string;
+      title?: string;
       text_content: string[];
       layout_suggestion?: string;
       elements?: SlideElement[];

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GripVertical, Edit2, Trash2, Check, X } from 'lucide-react';
 import { useT } from '@/hooks/useT';
 import { useImagePaste } from '@/hooks/useImagePaste';
-import { Card, useConfirm, Markdown, ShimmerOverlay } from '@/components/shared';
+import { Card, useConfirm, Markdown, ShimmerOverlay, ElementEditorModal } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
 import type { Page, SlideElement } from '@/types';
 
@@ -39,11 +39,22 @@ const outlineCardI18n = {
 };
 
 // 元素预览组件
-const ElementPreview: React.FC<{ element: SlideElement; t: any }> = ({ element, t }) => {
+const ElementPreview: React.FC<{ 
+  element: SlideElement; 
+  t: any; 
+  onEdit: (element: SlideElement) => void;
+}> = ({ element, t, onEdit }) => {
+  const handleClick = () => {
+    onEdit(element);
+  };
+
   switch (element.type) {
     case 'table':
       return (
-        <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+        <div 
+          onClick={handleClick}
+          className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             📊 {t('outlineCard.table')}
           </div>
@@ -69,7 +80,10 @@ const ElementPreview: React.FC<{ element: SlideElement; t: any }> = ({ element, 
     
     case 'chart':
       return (
-        <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+        <div 
+          onClick={handleClick}
+          className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="text-xs font-semibold text-blue-700 dark:text-blue-400">
             📈 {element.chart_type} {t('outlineCard.chart')}: {element.content || ''}
           </div>
@@ -78,7 +92,10 @@ const ElementPreview: React.FC<{ element: SlideElement; t: any }> = ({ element, 
     
     case 'image':
       return (
-        <div className="mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
+        <div 
+          onClick={handleClick}
+          className="mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="text-xs font-semibold text-purple-700 dark:text-purple-400">
             🖼️ {element.diagram_type || t('outlineCard.image')}: {element.content || element.image_prompt || ''}
           </div>
@@ -87,7 +104,10 @@ const ElementPreview: React.FC<{ element: SlideElement; t: any }> = ({ element, 
     
     case 'kpi':
       return (
-        <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+        <div 
+          onClick={handleClick}
+          className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="text-sm font-bold text-green-700 dark:text-green-400">
             {element.kpi_value} <span className="text-xs font-normal">{element.kpi_label}</span>
           </div>
@@ -134,6 +154,7 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
   const outline = page.outline_content ?? { title: '', points: [] as string[] };
   const elements = (page.outline_content as any)?.elements || [];
   const [isEditing, setIsEditing] = useState(false);
+  const [editingElement, setEditingElement] = useState<SlideElement | null>(null);
   const [editTitle, setEditTitle] = useState(outline.title);
   const [editPoints, setEditPoints] = useState(outline.points.join('\n'));
   const [editPart, setEditPart] = useState(page.part || '');
@@ -294,7 +315,7 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
               {elements.length > 0 && (
                 <div className="space-y-1">
                   {elements.map((element: SlideElement, idx: number) => (
-                    <ElementPreview key={idx} element={element} t={t} />
+                    <ElementPreview key={idx} element={element} t={t} onEdit={setEditingElement} />
                   ))}
                 </div>
               )}
@@ -331,6 +352,32 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
         )}
       </div>
       {ConfirmDialog}
+      
+      {/* 元素编辑对话框 */}
+      {editingElement && (
+        <ElementEditorModal
+          isOpen={!!editingElement}
+          onClose={() => setEditingElement(null)}
+          element={editingElement}
+          onSave={(updatedElement) => {
+            const currentOutline = page.outline_content as any;
+            const existingElements = currentOutline?.elements || [];
+            const index = existingElements.findIndex((el: SlideElement) => el === editingElement);
+            
+            if (index !== -1) {
+              const newElements = [...existingElements];
+              newElements[index] = updatedElement;
+              onUpdate({
+                outline_content: {
+                  ...currentOutline,
+                  elements: newElements,
+                },
+              });
+            }
+            setEditingElement(null);
+          }}
+        />
+      )}
     </Card>
   );
 };

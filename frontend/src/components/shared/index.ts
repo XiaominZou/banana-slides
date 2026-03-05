@@ -29,3 +29,8 @@ export { ExportTasksPanel } from './ExportTasksPanel';
 export { AccessCodeGuard } from './AccessCodeGuard';
 export { TextStyleSelector } from './TextStyleSelector';
 export { Pagination } from './Pagination';
+export { ElementEditorModal } from './ElementEditorModal';
+export { TableEditor } from './element-editors/TableEditor';
+export { ChartEditor } from './element-editors/ChartEditor';
+export { ImageEditor } from './element-editors/ImageEditor';
+export { KPIEditor } from './element-editors/KPIEditor';

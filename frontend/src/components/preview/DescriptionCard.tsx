@@ -2,16 +2,17 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Edit2, FileText, RefreshCw, BarChart3, Table, Image, TrendingUp } from 'lucide-react';
 import { useT } from '@/hooks/useT';
 import { useImagePaste } from '@/hooks/useImagePaste';
-import { Card, ContextualStatusBadge, Button, Modal, Skeleton, Markdown } from '@/components/shared';
+import { Card, ContextualStatusBadge, Button, Modal, Skeleton, Markdown, ElementEditorModal } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
 import { useDescriptionGeneratingState } from '@/hooks/useGeneratingState';
 import type { Page, DescriptionContent, SlideElement } from '@/types';
+import { reuseOutlineForDescription } from '@/api/endpoints';
 
 // DescriptionCard 组件自包含翻译
 const descriptionCardI18n = {
   zh: {
     descriptionCard: {
-      page: "第 {{num}} 页", regenerate: "重新生成",
+      page: "第 {{num}} 页", regenerate: "重新生成", reuseOutline: "一键复用大纲",
       descriptionTitle: "编辑页面描述", description: "描述",
       noDescription: "还没有生成描述",
       uploadingImage: "正在上传图片...",
@@ -27,13 +28,13 @@ const descriptionCardI18n = {
   },
   en: {
     descriptionCard: {
-      page: "Page {{num}}", regenerate: "Regenerate",
+      page: "Page {{num}}", regenerate: "Regenerate", reuseOutline: "Reuse Outline",
       descriptionTitle: "Edit Descriptions", description: "Description",
       noDescription: "No description generated yet",
       uploadingImage: "Uploading image...",
       descriptionPlaceholder: "Enter page description, can include page text, materials, layout design, etc., support pasting images",
       coverPage: "Cover",
-      coverPageTooltip: "This is the cover page, default to keep simple style"
+      coverPageTooltip: "This is cover page, default to keep simple style"
     },
     elements: {
       sectionTitle: "Page Elements",
@@ -42,16 +43,6 @@ const descriptionCardI18n = {
     }
   }
 };
-
-export interface DescriptionCardProps {
-  page: Page;
-  index: number;
-  projectId?: string;
-  showToast: (props: { message: string; type: 'success' | 'error' | 'info' | 'warning' }) => void;
-  onUpdate: (data: Partial<Page>) => void;
-  onRegenerate: () => void;
-  isAiRefining?: boolean;
-}
 
 // 从 description_content 提取文本内容（提取到组件外部供 memo 比较器使用）
 const getDescriptionText = (descContent: DescriptionContent | undefined): string => {
@@ -73,6 +64,15 @@ const getDescriptionElements = (descContent: DescriptionContent | undefined): Sl
   return [];
 };
 
+// 从 description_content 提取标题
+const getDescriptionTitle = (descContent: DescriptionContent | undefined): string => {
+  if (!descContent) return '';
+  if ('title' in descContent) {
+    return descContent.title || '';
+  }
+  return '';
+};
+
 // 图表类型名称映射
 const chartTypeNames: Record<string, string> = {
   bar: '柱状图',
@@ -92,7 +92,10 @@ const diagramTypeNames: Record<string, string> = {
 };
 
 // Elements 预览组件
-const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) => {
+const ElementsPreview: React.FC<{ 
+  elements: SlideElement[]; 
+  onEdit: (element: SlideElement) => void;
+}> = ({ elements, onEdit }) => {
   const t = useT(descriptionCardI18n);
 
   if (!elements || elements.length === 0) return null;
@@ -105,7 +108,11 @@ const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) =
       const labels = el.chart_data?.labels || [];
       const datasets = el.chart_data?.datasets || [];
       return (
-        <div key={idx} className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2">
+        <div 
+          key={idx} 
+          onClick={() => onEdit(el)}
+          className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-medium text-sm">
             <BarChart3 size={16} />
             <span>{chartName}{el.content ? `: ${el.content}` : ''}</span>
@@ -130,7 +137,11 @@ const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) =
       const headers = tableData[0] || [];
       const rows = tableData.slice(1);
       return (
-        <div key={idx} className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 space-y-2">
+        <div 
+          key={idx} 
+          onClick={() => onEdit(el)}
+          className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 space-y-2 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium text-sm">
             <Table size={16} />
             <span>{t('elements.table')}</span>
@@ -162,11 +173,15 @@ const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) =
         </div>
       );
     }
-
+    
     if (elType === 'image') {
       const diagramName = el.diagram_type ? (diagramTypeNames[el.diagram_type] || '图片') : '图片';
       return (
-        <div key={idx} className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+        <div 
+          key={idx} 
+          onClick={() => onEdit(el)}
+          className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="flex items-center gap-2 text-purple-700 dark:text-purple-400 font-medium text-sm">
             <Image size={16} />
             <span>{diagramName}{el.content ? `: ${el.content}` : ''}</span>
@@ -174,10 +189,14 @@ const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) =
         </div>
       );
     }
-
+    
     if (elType === 'kpi') {
       return (
-        <div key={idx} className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+        <div 
+          key={idx} 
+          onClick={() => onEdit(el)}
+          className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+        >
           <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-medium text-sm">
             <TrendingUp size={16} />
             <span>KPI: {el.kpi_label} = {el.kpi_value}</span>
@@ -194,7 +213,7 @@ const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) =
     return null;
   };
 
-  const visibleElements = elements.filter(el => 
+  const visibleElements = elements.filter((el: SlideElement) =>
     ['chart', 'table', 'image', 'kpi'].includes(el.type)
   );
 
@@ -212,6 +231,16 @@ const ElementsPreview: React.FC<{ elements: SlideElement[] }> = ({ elements }) =
   );
 };
 
+export interface DescriptionCardProps {
+  page: Page;
+  index: number;
+  projectId?: string;
+  showToast: (props: { message: string; type: 'success' | 'error' | 'info' | 'warning' }) => void;
+  onUpdate: (data: Partial<Page>) => void;
+  onRegenerate: () => void;
+  isAiRefining?: boolean;
+}
+
 export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   page,
   index,
@@ -225,12 +254,14 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
 
   const text = getDescriptionText(page.description_content);
   const elements = getDescriptionElements(page.description_content);
-
+  const title = getDescriptionTitle(page.description_content);
+  
   const [isEditing, setIsEditing] = useState(false);
+  const [editingElement, setEditingElement] = useState<SlideElement | null>(null);
   const [editContent, setEditContent] = useState('');
   const textareaRef = useRef<MarkdownTextareaRef>(null);
 
-  // Callback to insert at cursor position in the textarea
+  // Callback to insert at cursor position in textarea
   const insertAtCursor = useCallback((markdown: string) => {
     textareaRef.current?.insertAtCursor(markdown);
   }, []);
@@ -238,12 +269,37 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   const { handlePaste, handleFiles, isUploading } = useImagePaste({
     projectId,
     setContent: setEditContent,
-    showToast: showToast,
+    showToast,
     insertAtCursor,
   });
 
   // 通过 page.status 驱动骨架屏，与图片生成的 GENERATING 状态互不干扰
   const generating = useDescriptionGeneratingState(page, isAiRefining);
+
+  const handleEditReuseOutline = async () => {
+    try {
+      const response = await reuseOutlineForDescription((projectId || '') as string, page.page_id);
+      if (response.success) {
+        showToast({
+          message: '已成功复用大纲生成描述',
+          type: 'success'
+        });
+        if (response.data?.page) {
+          onUpdate(response.data.page);
+        }
+      } else {
+        showToast({
+          message: response.message || '复用大纲失败',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      showToast({
+        message: '复用大纲时发生错误',
+        type: 'error'
+      });
+    }
+  };
 
   const handleEdit = () => {
     // 在打开编辑对话框时，从当前的 page 获取最新值
@@ -255,10 +311,12 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   const handleSave = () => {
     const currentDesc = page.description_content as any;
     const existingElements = currentDesc?.elements || [];
-    
+    const currentTitle = getDescriptionTitle(page.description_content);
+
     onUpdate({
       description_content: {
         text: editContent,
+        title: currentTitle,
         elements: existingElements,
         generated_at: currentDesc?.generated_at,
       } as DescriptionContent,
@@ -303,14 +361,19 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
                 {t('common.generating')}
               </div>
             </div>
-          ) : (text || elements.length > 0) ? (
+          ) : (text || title || elements.length > 0) ? (
             <>
-              <ElementsPreview elements={elements} />
+              {title && (
+                <h4 className="font-semibold text-gray-900 dark:text-foreground-primary mb-3 text-base">
+                  {title}
+                </h4>
+              )}
               {text && (
-                <div className="text-sm text-gray-700 dark:text-foreground-secondary">
+                <div className="text-sm text-gray-700 dark:text-foreground-secondary mb-3">
                   <Markdown>{text}</Markdown>
                 </div>
               )}
+              <ElementsPreview elements={elements} onEdit={setEditingElement} />
             </>
           ) : (
             <div className="text-center py-8 text-gray-400 dark:text-foreground-tertiary">
@@ -339,6 +402,14 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
             disabled={generating}
           >
             {generating ? t('common.generating') : t('descriptionCard.regenerate')}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleEditReuseOutline}
+            disabled={generating}
+          >
+            {t('descriptionCard.reuseOutline')}
           </Button>
         </div>
       </Card>
@@ -371,6 +442,32 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
           </div>
         </div>
       </Modal>
+      
+      {/* 元素编辑对话框 */}
+      {editingElement && (
+        <ElementEditorModal
+          isOpen={!!editingElement}
+          onClose={() => setEditingElement(null)}
+          element={editingElement}
+          onSave={(updatedElement) => {
+            const currentDesc = page.description_content as any;
+            const existingElements = currentDesc?.elements || [];
+            const index = existingElements.findIndex((el: SlideElement) => el === editingElement);
+            
+            if (index !== -1) {
+              const newElements = [...existingElements];
+              newElements[index] = updatedElement;
+              onUpdate({
+                description_content: {
+                  ...currentDesc,
+                  elements: newElements,
+                },
+              });
+            }
+            setEditingElement(null);
+          }}
+        />
+      )}
     </>
   );
 }, (prev, next) =>
@@ -380,6 +477,7 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   prev.page.id === next.page.id &&
   prev.page.status === next.page.status &&
   prev.page.part === next.page.part &&
+  getDescriptionTitle(prev.page.description_content) === getDescriptionTitle(next.page.description_content) &&
   getDescriptionText(prev.page.description_content) === getDescriptionText(next.page.description_content) &&
   JSON.stringify(getDescriptionElements(prev.page.description_content)) === JSON.stringify(getDescriptionElements(next.page.description_content))
 );
