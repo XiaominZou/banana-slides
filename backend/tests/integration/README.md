@@ -173,5 +173,5 @@ pytest tests/integration -v -m "not requires_service"
 ---
 
 **更新日期**: 2025-12-22  
-**维护者**: Banana Slides Team
+**维护者**: Slides Now Team
 

@@ -947,3 +947,340 @@ def regenerate_renovation_page(project_id, page_id):
         db.session.rollback()
         logger.error(f"Failed to regenerate renovation page: {e}", exc_info=True)
         return error_response("SERVER_ERROR", str(e), 500)
+
+
+@page_bp.route("/<project_id>/pages/<page_id>/refine/outline", methods=["POST"])
+def refine_page_outline(project_id, page_id):
+    """
+    POST /api/projects/{project_id}/pages/{page_id}/refine/outline - Refine single page outline based on user requirements
+
+    Request body:
+    {
+        "user_requirement": "用户要求，例如：添加2024年最新数据",
+        "enable_web_search": true,  # 是否启用联网搜索，默认true
+        "language": "zh"  # output language: zh, en, ja, auto
+    }
+    """
+    try:
+        page = Page.query.get(page_id)
+
+        if not page or page.project_id != project_id:
+            return not_found("Page")
+
+        project = Project.query.get(project_id)
+        if not project:
+            return not_found("Project")
+
+        data = request.get_json()
+
+        if not data or not data.get("user_requirement"):
+            return bad_request("user_requirement is required")
+
+        user_requirement = data["user_requirement"]
+        enable_web_search = data.get("enable_web_search", True)
+        language = data.get("language", current_app.config.get("OUTPUT_LANGUAGE", "zh"))
+
+        # Get current outline content
+        outline_content = page.get_outline_content()
+        if not outline_content:
+            return bad_request("Page outline not found")
+
+        # Initialize AI service
+        ai_service = get_ai_service()
+
+        # Get reference files content and create project context
+        from controllers.project_controller import _get_project_reference_files_content
+
+        reference_files_content = _get_project_reference_files_content(project_id)
+        project_context = ProjectContext(project, reference_files_content)
+
+        # Refine page outline
+        logger.info(
+            f"开始修改页面大纲: 项目 {project_id}, 页面 {page_id}, 用户要求: {user_requirement}, 联网搜索: {enable_web_search}"
+        )
+        refined_outline = ai_service.refine_page_outline(
+            page_outline=outline_content,
+            user_requirement=user_requirement,
+            project_context=project_context,
+            enable_web_search=enable_web_search,
+            language=language,
+        )
+
+        # Update page outline
+        page.set_outline_content(refined_outline)
+        page.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        logger.info(f"页面大纲修改完成: 项目 {project_id}, 页面 {page_id}")
+
+        return success_response({"page": page.to_dict(), "message": "页面大纲修改成功"})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"refine_page_outline failed: {str(e)}", exc_info=True)
+        return error_response("AI_SERVICE_ERROR", str(e), 503)
+
+
+@page_bp.route("/<project_id>/pages/<page_id>/refine/description", methods=["POST"])
+def refine_page_description(project_id, page_id):
+    """
+    POST /api/projects/{project_id}/pages/{page_id}/refine/description - Refine single page description based on user requirements
+
+    Request body:
+    {
+        "user_requirement": "用户要求，例如：让描述更详细一些",
+        "enable_web_search": true,  # 是否启用联网搜索，默认true
+        "language": "zh"  # output language: zh, en, ja, auto
+    }
+    """
+    try:
+        page = Page.query.get(page_id)
+
+        if not page or page.project_id != project_id:
+            return not_found("Page")
+
+        project = Project.query.get(project_id)
+        if not project:
+            return not_found("Project")
+
+        data = request.get_json()
+
+        if not data or not data.get("user_requirement"):
+            return bad_request("user_requirement is required")
+
+        user_requirement = data["user_requirement"]
+        enable_web_search = data.get("enable_web_search", True)
+        language = data.get("language", current_app.config.get("OUTPUT_LANGUAGE", "zh"))
+
+        # Get current outline and description content
+        outline_content = page.get_outline_content()
+        if not outline_content:
+            return bad_request("Page outline not found")
+
+        description_content = page.get_description_content()
+        if not description_content:
+            return bad_request("Page description not found")
+
+        # Extract description text
+        if isinstance(description_content, dict):
+            description_text = description_content.get("text", "")
+        else:
+            description_text = str(description_content)
+
+        # Initialize AI service
+        ai_service = get_ai_service()
+
+        # Get reference files content and create project context
+        from controllers.project_controller import _get_project_reference_files_content
+
+        reference_files_content = _get_project_reference_files_content(project_id)
+        project_context = ProjectContext(project, reference_files_content)
+
+        # Refine page description
+        logger.info(
+            f"开始修改页面描述: 项目 {project_id}, 页面 {page_id}, 用户要求: {user_requirement}, 联网搜索: {enable_web_search}"
+        )
+        refined_description = ai_service.refine_page_description(
+            page_description=description_text,
+            page_outline=outline_content,
+            user_requirement=user_requirement,
+            project_context=project_context,
+            enable_web_search=enable_web_search,
+            language=language,
+        )
+
+        # Update page description
+        new_description_content = {
+            "text": refined_description,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+
+        # Preserve elements from old description
+        if isinstance(description_content, dict) and "elements" in description_content:
+            new_description_content["elements"] = description_content["elements"]
+
+        page.set_description_content(new_description_content)
+        page.status = "DESCRIPTION_GENERATED"
+        page.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        logger.info(f"页面描述修改完成: 项目 {project_id}, 页面 {page_id}")
+
+        return success_response({"page": page.to_dict(), "message": "页面描述修改成功"})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"refine_page_description failed: {str(e)}", exc_info=True)
+        return error_response("AI_SERVICE_ERROR", str(e), 503)
+
+
+@page_bp.route(
+    "/<project_id>/pages/<page_id>/elements/<int:element_index>", methods=["DELETE"]
+)
+def delete_page_element(project_id, page_id, element_index):
+    """
+    DELETE /api/projects/{project_id}/pages/{page_id}/elements/{element_index} - Delete element from page
+
+    Query parameters:
+        source: "outline" or "description" (default: "outline")
+    """
+    try:
+        page = Page.query.get(page_id)
+
+        if not page or page.project_id != project_id:
+            return not_found("Page")
+
+        source = request.args.get("source", "outline")
+
+        if source == "outline":
+            content = page.get_outline_content()
+            if not content:
+                return bad_request("Page outline not found")
+
+            elements = content.get("elements", [])
+            if element_index < 0 or element_index >= len(elements):
+                return bad_request(f"Element index {element_index} out of range")
+
+            # Remove element
+            elements.pop(element_index)
+            content["elements"] = elements
+            page.set_outline_content(content)
+
+        elif source == "description":
+            content = page.get_description_content()
+            if not content:
+                return bad_request("Page description not found")
+
+            elements = content.get("elements", [])
+            if element_index < 0 or element_index >= len(elements):
+                return bad_request(f"Element index {element_index} out of range")
+
+            # Remove element
+            elements.pop(element_index)
+            content["elements"] = elements
+            page.set_description_content(content)
+        else:
+            return bad_request("Invalid source, must be 'outline' or 'description'")
+
+        page.updated_at = datetime.utcnow()
+        db.session.commit()
+
+        logger.info(
+            f"Element deleted: 项目 {project_id}, 页面 {page_id}, element_index {element_index}, source {source}"
+        )
+
+        return success_response(
+            {"page": page.to_dict(), "message": "Element deleted successfully"}
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"delete_page_element failed: {str(e)}", exc_info=True)
+        return error_response("SERVER_ERROR", str(e), 500)
+
+
+@page_bp.route(
+    "/<project_id>/pages/<page_id>/elements/<int:element_index>/refine",
+    methods=["POST"],
+)
+def refine_page_element(project_id, page_id, element_index):
+    """
+    POST /api/projects/{project_id}/pages/{page_id}/elements/{element_index}/refine - Refine element based on user requirements
+
+    Request body:
+    {
+        "user_requirement": "用户要求，例如：添加2024年数据",
+        "enable_web_search": true,  # 是否启用联网搜索，默认true
+        "language": "zh"  # output language: zh, en, ja, auto
+    }
+
+    Query parameters:
+        source: "outline" or "description" (default: "outline")
+    """
+    try:
+        page = Page.query.get(page_id)
+
+        if not page or page.project_id != project_id:
+            return not_found("Page")
+
+        project = Project.query.get(project_id)
+        if not project:
+            return not_found("Project")
+
+        data = request.get_json()
+
+        if not data or not data.get("user_requirement"):
+            return bad_request("user_requirement is required")
+
+        user_requirement = data["user_requirement"]
+        enable_web_search = data.get("enable_web_search", True)
+        language = data.get("language", current_app.config.get("OUTPUT_LANGUAGE", "zh"))
+        source = request.args.get("source", "outline")
+
+        # Get content based on source
+        if source == "outline":
+            content = page.get_outline_content()
+            if not content:
+                return bad_request("Page outline not found")
+        elif source == "description":
+            content = page.get_description_content()
+            if not content:
+                return bad_request("Page description not found")
+        else:
+            return bad_request("Invalid source, must be 'outline' or 'description'")
+
+        # Get element
+        elements = content.get("elements", [])
+        if element_index < 0 or element_index >= len(elements):
+            return bad_request(f"Element index {element_index} out of range")
+
+        element = elements[element_index]
+
+        # Initialize AI service
+        ai_service = get_ai_service()
+
+        # Get reference files content and create project context
+        from controllers.project_controller import _get_project_reference_files_content
+
+        reference_files_content = _get_project_reference_files_content(project_id)
+        project_context = ProjectContext(project, reference_files_content)
+
+        # Refine element
+        logger.info(
+            f"开始修改element: 项目 {project_id}, 页面 {page_id}, element_index {element_index}, source {source}, 用户要求: {user_requirement}, 联网搜索: {enable_web_search}"
+        )
+        refined_element = ai_service.refine_element(
+            element=element,
+            user_requirement=user_requirement,
+            project_context=project_context,
+            enable_web_search=enable_web_search,
+            language=language,
+        )
+
+        # Update element
+        elements[element_index] = refined_element
+        content["elements"] = elements
+
+        # Save content based on source
+        if source == "outline":
+            page.set_outline_content(content)
+        else:
+            page.set_description_content(content)
+
+        page.updated_at = datetime.utcnow()
+        db.session.commit()
+
+        logger.info(
+            f"Element refined: 项目 {project_id}, 页面 {page_id}, element_index {element_index}, source {source}"
+        )
+
+        return success_response(
+            {"page": page.to_dict(), "message": "Element refined successfully"}
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"refine_page_element failed: {str(e)}", exc_info=True)
+        return error_response("AI_SERVICE_ERROR", str(e), 503)

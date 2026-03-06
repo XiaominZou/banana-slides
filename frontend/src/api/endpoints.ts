@@ -301,12 +301,14 @@ export const regenerateRenovationPage = async (
  * @param projectId 项目ID
  * @param userRequirement 用户要求
  * @param previousRequirements 历史要求（可选）
+ * @param enableWebSearch 是否启用联网搜索（可选，默认true）
  * @param language 输出语言（可选，默认从 sessionStorage 获取）
  */
 export const refineOutline = async (
   projectId: string,
   userRequirement: string,
   previousRequirements?: string[],
+  enableWebSearch?: boolean,
   language?: OutputLanguage
 ): Promise<ApiResponse<{ pages: Page[]; message: string }>> => {
   const lang = language || await getStoredOutputLanguage();
@@ -315,6 +317,7 @@ export const refineOutline = async (
     {
       user_requirement: userRequirement,
       previous_requirements: previousRequirements || [],
+      enable_web_search: enableWebSearch !== undefined ? enableWebSearch : true,
       language: lang
     }
   );
@@ -326,12 +329,14 @@ export const refineOutline = async (
  * @param projectId 项目ID
  * @param userRequirement 用户要求
  * @param previousRequirements 历史要求（可选）
+ * @param enableWebSearch 是否启用联网搜索（可选，默认true）
  * @param language 输出语言（可选，默认从 sessionStorage 获取）
  */
 export const refineDescriptions = async (
   projectId: string,
   userRequirement: string,
   previousRequirements?: string[],
+  enableWebSearch?: boolean,
   language?: OutputLanguage
 ): Promise<ApiResponse<{ pages: Page[]; message: string }>> => {
   const lang = language || await getStoredOutputLanguage();
@@ -340,7 +345,118 @@ export const refineDescriptions = async (
     {
       user_requirement: userRequirement,
       previous_requirements: previousRequirements || [],
+      enable_web_search: enableWebSearch !== undefined ? enableWebSearch : true,
       language: lang
+    }
+  );
+  return response.data;
+};
+
+/**
+ * 根据用户要求修改单页大纲
+ * @param projectId 项目ID
+ * @param pageId 页面ID
+ * @param userRequirement 用户要求
+ * @param enableWebSearch 是否启用联网搜索（可选，默认true）
+ * @param language 输出语言（可选，默认从 sessionStorage 获取）
+ */
+export const refinePageOutline = async (
+  projectId: string,
+  pageId: string,
+  userRequirement: string,
+  enableWebSearch?: boolean,
+  language?: OutputLanguage
+): Promise<ApiResponse<{ page: Page; message: string }>> => {
+  const lang = language || await getStoredOutputLanguage();
+  const response = await apiClient.post<ApiResponse<{ page: Page; message: string }>>(
+    `/api/projects/${projectId}/pages/${pageId}/refine/outline`,
+    {
+      user_requirement: userRequirement,
+      enable_web_search: enableWebSearch !== undefined ? enableWebSearch : true,
+      language: lang
+    }
+  );
+  return response.data;
+};
+
+/**
+ * 根据用户要求修改单页描述
+ * @param projectId 项目ID
+ * @param pageId 页面ID
+ * @param userRequirement 用户要求
+ * @param enableWebSearch 是否启用联网搜索（可选，默认true）
+ * @param language 输出语言（可选，默认从 sessionStorage 获取）
+ */
+export const refinePageDescription = async (
+  projectId: string,
+  pageId: string,
+  userRequirement: string,
+  enableWebSearch?: boolean,
+  language?: OutputLanguage
+): Promise<ApiResponse<{ page: Page; message: string }>> => {
+  const lang = language || await getStoredOutputLanguage();
+  const response = await apiClient.post<ApiResponse<{ page: Page; message: string }>>(
+    `/api/projects/${projectId}/pages/${pageId}/refine/description`,
+    {
+      user_requirement: userRequirement,
+      enable_web_search: enableWebSearch !== undefined ? enableWebSearch : true,
+      language: lang
+    }
+  );
+  return response.data;
+};
+
+/**
+ * 删除页面元素
+ * @param projectId 项目ID
+ * @param pageId 页面ID
+ * @param elementIndex 元素索引
+ * @param source 来源：'outline' 或 'description'
+ */
+export const deletePageElement = async (
+  projectId: string,
+  pageId: string,
+  elementIndex: number,
+  source: 'outline' | 'description'
+): Promise<ApiResponse<{ page: Page; message: string }>> => {
+  const response = await apiClient.delete<ApiResponse<{ page: Page; message: string }>>(
+    `/api/projects/${projectId}/pages/${pageId}/elements/${elementIndex}`,
+    {
+      params: { source }
+    }
+  );
+  return response.data;
+};
+
+/**
+ * 根据用户要求修改页面元素
+ * @param projectId 项目ID
+ * @param pageId 页面ID
+ * @param elementIndex 元素索引
+ * @param source 来源：'outline' 或 'description'
+ * @param userRequirement 用户要求
+ * @param enableWebSearch 是否启用联网搜索（可选，默认true）
+ * @param language 输出语言（可选，默认从 sessionStorage 获取）
+ */
+export const refinePageElement = async (
+  projectId: string,
+  pageId: string,
+  elementIndex: number,
+  source: 'outline' | 'description',
+  userRequirement: string,
+  enableWebSearch?: boolean,
+  language?: OutputLanguage
+): Promise<ApiResponse<{ page: Page; message: string }>> => {
+  const lang = language || await getStoredOutputLanguage();
+  const response = await apiClient.post<ApiResponse<{ page: Page; message: string }>>(
+    `/api/projects/${projectId}/pages/${pageId}/elements/${elementIndex}/refine`,
+    {
+      user_requirement: userRequirement,
+      enable_web_search: enableWebSearch !== undefined ? enableWebSearch : true,
+      language: lang
+    },
+    {
+      params: { source }
     }
   );
   return response.data;

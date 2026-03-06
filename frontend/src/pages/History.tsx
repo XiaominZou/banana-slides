@@ -15,7 +15,7 @@ import type { Project } from '@/types';
 // 页面特有翻译 - AI 可以直接看到所有文案
 const historyI18n = {
   zh: {
-    home: { title: '蕉幻', actions: { createProject: '创建新项目' } },
+    home: { title: '即幻', actions: { createProject: '创建新项目' } },
     nav: { home: '主页' },
     settings: { language: { label: '界面语言' }, theme: { light: '浅色', dark: '深色' } },
     history: {
@@ -43,7 +43,7 @@ const historyI18n = {
     },
   },
   en: {
-    home: { title: 'Banana Slides', actions: { createProject: 'Create New Project' } },
+    home: { title: 'Slides Now', actions: { createProject: 'Create New Project' } },
     nav: { home: 'Home' },
     settings: { language: { label: 'Interface Language' }, theme: { light: 'Light', dark: 'Dark' } },
     history: {
@@ -371,7 +371,7 @@ export const History: React.FC = () => {
         <div className="max-w-7xl mx-auto px-3 md:px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-banana-500 to-banana-600 rounded-lg flex items-center justify-center text-xl md:text-2xl">
-              🍌
+              🪄
             </div>
             <span className="text-lg md:text-xl font-bold text-gray-900 dark:text-foreground-primary">{t('home.title')}</span>
           </div>

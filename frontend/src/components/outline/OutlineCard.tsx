@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GripVertical, Edit2, Trash2, Check, X } from 'lucide-react';
+import { GripVertical, Edit2, Trash2, Check, X, Sparkles, Trash } from 'lucide-react';
 import { useT } from '@/hooks/useT';
 import { useImagePaste } from '@/hooks/useImagePaste';
 import { Card, useConfirm, Markdown, ShimmerOverlay, ElementEditorModal } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
 import type { Page, SlideElement } from '@/types';
+import { refinePageOutline, deletePageElement } from '@/api/endpoints';
 
 // OutlineCard 组件自包含翻译
 const outlineCardI18n = {
@@ -19,7 +20,14 @@ const outlineCardI18n = {
       table: "表格",
       chart: "图表",
       image: "图片",
-      kpi: "指标"
+      kpi: "指标",
+      aiRefine: "AI修改",
+      deleteElement: "删除元素",
+      confirmDeleteElement: "确定要删除这个元素吗？",
+      refinePlaceholder: "请输入修改要求...",
+      enableWebSearch: "启用联网搜索",
+      refining: "正在修改...",
+      webSearching: "正在联网搜索..."
     }
   },
   en: {
@@ -27,13 +35,20 @@ const outlineCardI18n = {
       page: "Page {{num}}", chapter: "Chapter", titleLabel: "Title",
       keyPointsPlaceholder: "Key points (one per line, paste images supported)", confirmDeletePage: "Are you sure you want to delete this page?",
       confirmDeleteTitle: "Confirm Delete",
-      uploadingImage: "Uploading image...",
+            uploadingImage: "Uploading image...",
       coverPage: "Cover",
       coverPageTooltip: "This is the cover page, usually containing the title and subtitle",
       table: "Table",
       chart: "Chart",
       image: "Image",
-      kpi: "KPI"
+      kpi: "KPI",
+      aiRefine: "AI Refine",
+      deleteElement: "Delete Element",
+      confirmDeleteElement: "Are you sure you want to delete this element?",
+      refinePlaceholder: "Enter refinement requirement...",
+      enableWebSearch: "Enable Web Search",
+      refining: "Refining...",
+      webSearching: "Web searching..."
     }
   }
 };
@@ -43,7 +58,8 @@ const ElementPreview: React.FC<{
   element: SlideElement; 
   t: any; 
   onEdit: (element: SlideElement) => void;
-}> = ({ element, t, onEdit }) => {
+  onDelete: () => void;
+}> = ({ element, t, onEdit, onDelete }) => {
   const handleClick = () => {
     onEdit(element);
   };
@@ -51,12 +67,27 @@ const ElementPreview: React.FC<{
   switch (element.type) {
     case 'table':
       return (
-        <div 
-          onClick={handleClick}
-          className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
-        >
-          <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-            📊 {t('outlineCard.table')}
+        <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 hover:ring-2 hover:ring-banana-400 transition-all group">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+              📊 {t('outlineCard.table')}
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleClick}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
           {element.table_data && element.table_data.length > 0 && (
             <>
@@ -80,36 +111,81 @@ const ElementPreview: React.FC<{
     
     case 'chart':
       return (
-        <div 
-          onClick={handleClick}
-          className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
-        >
-          <div className="text-xs font-semibold text-blue-700 dark:text-blue-400">
-            📈 {element.chart_type} {t('outlineCard.chart')}: {element.content || ''}
+        <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800 hover:ring-2 hover:ring-banana-400 transition-all group">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+              📈 {element.chart_type} {t('outlineCard.chart')}: {element.content || ''}
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleClick}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
         </div>
       );
     
     case 'image':
       return (
-        <div 
-          onClick={handleClick}
-          className="mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
-        >
-          <div className="text-xs font-semibold text-purple-700 dark:text-purple-400">
-            🖼️ {element.diagram_type || t('outlineCard.image')}: {element.content || element.image_prompt || ''}
+        <div className="mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800 hover:ring-2 hover:ring-banana-400 transition-all group">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-purple-700 dark:text-purple-400">
+              🖼️ {element.diagram_type || t('outlineCard.image')}: {element.content || element.image_prompt || ''}
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleClick}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
         </div>
       );
     
     case 'kpi':
       return (
-        <div 
-          onClick={handleClick}
-          className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
-        >
-          <div className="text-sm font-bold text-green-700 dark:text-green-400">
-            {element.kpi_value} <span className="text-xs font-normal">{element.kpi_label}</span>
+        <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 hover:ring-2 hover:ring-banana-400 transition-all group">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-bold text-green-700 dark:text-green-400">
+              {element.kpi_value} <span className="text-xs font-normal">{element.kpi_label}</span>
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleClick}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
           {element.kpi_trend && (
             <div className="text-xs text-green-600 dark:text-green-500">
@@ -154,13 +230,17 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
   const outline = page.outline_content ?? { title: '', points: [] as string[] };
   const elements = (page.outline_content as any)?.elements || [];
   const [isEditing, setIsEditing] = useState(false);
+  const [localAiRefining, setLocalAiRefining] = useState(false);
+  const [showAiRefineInput, setShowAiRefineInput] = useState(false);
+  const [aiRefineInput, setAiRefineInput] = useState('');
+  const [enableWebSearch, setEnableWebSearch] = useState(true);
   const [editingElement, setEditingElement] = useState<SlideElement | null>(null);
   const [editTitle, setEditTitle] = useState(outline.title);
   const [editPoints, setEditPoints] = useState(outline.points.join('\n'));
   const [editPart, setEditPart] = useState(page.part || '');
   const textareaRef = useRef<MarkdownTextareaRef>(null);
 
-  // Callback to insert at cursor position in the textarea
+  // Callback to insert at cursor position in textarea
   const insertAtCursor = useCallback((markdown: string) => {
     textareaRef.current?.insertAtCursor(markdown);
   }, []);
@@ -168,7 +248,7 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
   const { handlePaste, handleFiles, isUploading } = useImagePaste({
     projectId,
     setContent: setEditPoints,
-    showToast: showToast,
+    showToast,
     insertAtCursor,
   });
 
@@ -209,6 +289,43 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
     setIsEditing(false);
   };
 
+  const handleAiRefine = async () => {
+    if (!projectId || !aiRefineInput.trim()) return;
+    
+    setLocalAiRefining(true);
+    try {
+      const response = await refinePageOutline(projectId, page.page_id, aiRefineInput, enableWebSearch);
+      if (response.success) {
+        onUpdate(response.data.page);
+        showToast({ message: '大纲修改成功', type: 'success' });
+        setShowAiRefineInput(false);
+        setAiRefineInput('');
+      } else {
+        showToast({ message: response.message || '大纲修改失败', type: 'error' });
+      }
+    } catch (error: any) {
+      showToast({ message: error.message || '大纲修改失败', type: 'error' });
+    } finally {
+      setLocalAiRefining(false);
+    }
+  };
+
+  const handleDeleteElement = async (elementIndex: number) => {
+    if (!projectId) return;
+    
+    try {
+      const response = await deletePageElement(projectId, page.page_id, elementIndex, 'outline');
+      if (response.success) {
+        onUpdate(response.data.page);
+        showToast({ message: '元素删除成功', type: 'success' });
+      } else {
+        showToast({ message: response.message || '元素删除失败', type: 'error' });
+      }
+    } catch (error: any) {
+      showToast({ message: error.message || '元素删除失败', type: 'error' });
+    }
+  };
+
   return (
     <Card
       className={`p-4 relative ${
@@ -216,7 +333,7 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
       }`}
       onClick={!isEditing ? onClick : undefined}
     >
-      <ShimmerOverlay show={isAiRefining} />
+      <ShimmerOverlay show={isAiRefining || localAiRefining} />
 
       <div className="flex items-start gap-3 relative z-10">
         {/* 拖拽手柄 */}
@@ -309,14 +426,59 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
               {/* 展示要点 */}
               <div className="text-gray-600 dark:text-foreground-tertiary mb-2">
                 <Markdown>{outline.points.join('\n')}</Markdown>
-              </div>
+                           </div>
               
               {/* 展示元素预览 */}
               {elements.length > 0 && (
                 <div className="space-y-1">
                   {elements.map((element: SlideElement, idx: number) => (
-                    <ElementPreview key={idx} element={element} t={t} onEdit={setEditingElement} />
+                    <ElementPreview 
+                      key={idx} 
+                      element={element} 
+                      t={t} 
+                      onEdit={setEditingElement}
+                      onDelete={() => handleDeleteElement(idx)}
+                    />
                   ))}
+                </div>
+              )}
+              
+              {/* AI修改输入框 */}
+              {showAiRefineInput && (
+                <div className="mt-3 p-3 bg-banana-50 dark:bg-banana-900/20 rounded-lg border border-banana-200 dark:border-banana-800">
+                  <textarea
+                    value={aiRefineInput}
+                    onChange={(e) => setAiRefineInput(e.target.value)}
+                    placeholder={t('outlineCard.refinePlaceholder')}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-banana-500 resize-none"
+                    rows={3}
+                  />
+                  <div className="flex items-center justify-between mt-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-600 dark:text:text-gray-400">
+                      <input
+                        type="checkbox"
+                        checked={enableWebSearch}
+                        onChange={(e) => setEnableWebSearch(e.target.checked)}
+                        className="rounded border-gray-300 text-banana-500 focus:ring-banana-500"
+                      />
+                      {t('outlineCard.enableWebSearch')}
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowAiRefineInput(false)}
+                        className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                      <button
+                        onClick={handleAiRefine}
+                        disabled={localAiRefining || !aiRefineInput.trim()}
+                        className="px-3 py-1.5 text-sm bg-banana-500 text-white rounded-lg hover:bg-banana-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {localAiRefining ? t('outlineCard.refining') : t('outlineCard.aiRefine')}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -326,6 +488,16 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
         {/* 操作按钮 */}
         {!isEditing && (
           <div className="flex-shrink-0 flex gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAiRefineInput(!showAiRefineInput);
+              }}
+              className="p-1.5 text-gray-500 dark:text-foreground-tertiary hover:text-banana-600 hover:bg-banana-50 dark:hover:bg-background-hover rounded transition-colors"
+              title={t('outlineCard.aiRefine')}
+            >
+              <Sparkles size={16} />
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -359,6 +531,10 @@ export const OutlineCard: React.FC<OutlineCardProps> = ({
           isOpen={!!editingElement}
           onClose={() => setEditingElement(null)}
           element={editingElement}
+          projectId={projectId}
+          pageId={page.page_id}
+          source="outline"
+          elementIndex={elements.findIndex((el: SlideElement) => el === editingElement)}
           onSave={(updatedElement) => {
             const currentOutline = page.outline_content as any;
             const existingElements = currentOutline?.elements || [];

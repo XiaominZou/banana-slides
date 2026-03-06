@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Banana Slides Backend Startup Script
+# Slides Now Backend Startup Script
 
 echo "╔══════════════════════════════════════╗"
-echo "║   🍌 Banana Slides API Server 🍌   ║"
+echo "║   🪄 Slides Now API Server 🪄   ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 

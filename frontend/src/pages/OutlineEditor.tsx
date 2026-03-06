@@ -7,7 +7,7 @@ import PresetCapsules from '@/components/shared/PresetCapsules';
 // 组件内翻译
 const outlineI18n = {
   zh: {
-    home: { title: '蕉幻' },
+    home: { title: '即幻' },
     outline: {
       title: "编辑大纲", pageCount: "共 {{count}} 页", addPage: "添加页面",
       generateDescriptions: "生成描述", generating: "生成中...", chapter: "章节",
@@ -38,7 +38,7 @@ const outlineI18n = {
     }
   },
   en: {
-    home: { title: 'Banana Slides' },
+    home: { title: 'Slides Now' },
     outline: {
       title: "Edit Outline", pageCount: "{{count}} pages", addPage: "Add Page",
       generateDescriptions: "Generate Descriptions", generating: "Generating...", chapter: "Chapter",
@@ -360,11 +360,11 @@ export const OutlineEditor: React.FC = () => {
     await doGenerate();
   };
 
-  const handleAiRefineOutline = useCallback(async (requirement: string, previousRequirements: string[]) => {
+  const handleAiRefineOutline = useCallback(async (requirement: string, previousRequirements: string[], enableWebSearch: boolean) => {
     if (!currentProject || !projectId) return;
 
     try {
-      const response = await refineOutline(projectId, requirement, previousRequirements);
+      const response = await refineOutline(projectId, requirement, previousRequirements, enableWebSearch);
       await syncProject(projectId);
       show({
         message: response.data?.message || t('outline.messages.refineSuccess'),
@@ -447,7 +447,7 @@ export const OutlineEditor: React.FC = () => {
               <span className="hidden sm:inline">{t('common.back')}</span>
             </Button>
             <div className="flex items-center gap-1.5 md:gap-2">
-              <span className="text-xl md:text-2xl">🍌</span>
+              <span className="text-xl md:text-2xl">🪄</span>
               <span className="text-base md:text-xl font-bold">{t('home.title')}</span>
             </div>
             <span className="text-gray-400 hidden lg:inline">|</span>
@@ -463,6 +463,7 @@ export const OutlineEditor: React.FC = () => {
               disabled={false}
               className="!p-0 !bg-transparent !border-0"
               onStatusChange={setIsAiRefining}
+              showWebSearch={true}
             />
           </div>
 

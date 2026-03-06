@@ -1,12 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Edit2, FileText, RefreshCw, BarChart3, Table, Image, TrendingUp } from 'lucide-react';
+import { Edit2, FileText, RefreshCw, BarChart3, Table, Image, TrendingUp, Sparkles, Trash } from 'lucide-react';
 import { useT } from '@/hooks/useT';
 import { useImagePaste } from '@/hooks/useImagePaste';
 import { Card, ContextualStatusBadge, Button, Modal, Skeleton, Markdown, ElementEditorModal } from '@/components/shared';
 import { MarkdownTextarea, type MarkdownTextareaRef } from '@/components/shared/MarkdownTextarea';
 import { useDescriptionGeneratingState } from '@/hooks/useGeneratingState';
 import type { Page, DescriptionContent, SlideElement } from '@/types';
-import { reuseOutlineForDescription } from '@/api/endpoints';
+import { reuseOutlineForDescription, refinePageDescription, deletePageElement } from '@/api/endpoints';
 
 // DescriptionCard 组件自包含翻译
 const descriptionCardI18n = {
@@ -18,7 +18,13 @@ const descriptionCardI18n = {
       uploadingImage: "正在上传图片...",
       descriptionPlaceholder: "输入页面描述, 可包含页面文字、素材、排版设计等信息，支持粘贴图片",
       coverPage: "封面",
-      coverPageTooltip: "第一页为封面页，默认保持简洁风格"
+      coverPageTooltip: "第一页为封面页，默认保持简洁风格",
+      aiRefine: "AI修改",
+      deleteElement: "删除元素",
+      confirmDeleteElement: "确定要删除这个元素吗？",
+      refinePlaceholder: "请输入修改要求...",
+      enableWebSearch: "启用联网搜索",
+      refining: "正在修改..."
     },
     elements: {
       sectionTitle: "页面元素",
@@ -34,7 +40,13 @@ const descriptionCardI18n = {
       uploadingImage: "Uploading image...",
       descriptionPlaceholder: "Enter page description, can include page text, materials, layout design, etc., support pasting images",
       coverPage: "Cover",
-      coverPageTooltip: "This is cover page, default to keep simple style"
+      coverPageTooltip: "This is cover page, default to keep simple style",
+      aiRefine: "AI Refine",
+      deleteElement: "Delete Element",
+      confirmDeleteElement: "Are you sure you want to delete this element?",
+      refinePlaceholder: "Enter refinement requirement...",
+      enableWebSearch: "Enable Web Search",
+      refining: "Refining..."
     },
     elements: {
       sectionTitle: "Page Elements",
@@ -47,10 +59,10 @@ const descriptionCardI18n = {
 // 从 description_content 提取文本内容（提取到组件外部供 memo 比较器使用）
 const getDescriptionText = (descContent: DescriptionContent | undefined): string => {
   if (!descContent) return '';
-  if ('text' in descContent) {
-    return descContent.text;
+  if ('text' in descContent && typeof descContent.text === 'string') {
+    return descContent.text.trim();
   } else if ('text_content' in descContent && Array.isArray(descContent.text_content)) {
-    return descContent.text_content.join('\n');
+    return descContent.text_content.filter(t => t).join('\n');
   }
   return '';
 };
@@ -59,7 +71,7 @@ const getDescriptionText = (descContent: DescriptionContent | undefined): string
 const getDescriptionElements = (descContent: DescriptionContent | undefined): SlideElement[] => {
   if (!descContent) return [];
   if ('elements' in descContent && Array.isArray(descContent.elements)) {
-    return descContent.elements;
+    return descContent.elements.filter(el => el && el.type);
   }
   return [];
 };
@@ -67,8 +79,8 @@ const getDescriptionElements = (descContent: DescriptionContent | undefined): Sl
 // 从 description_content 提取标题
 const getDescriptionTitle = (descContent: DescriptionContent | undefined): string => {
   if (!descContent) return '';
-  if ('title' in descContent) {
-    return descContent.title || '';
+  if ('title' in descContent && typeof descContent.title === 'string') {
+    return descContent.title.trim();
   }
   return '';
 };
@@ -95,7 +107,8 @@ const diagramTypeNames: Record<string, string> = {
 const ElementsPreview: React.FC<{ 
   elements: SlideElement[]; 
   onEdit: (element: SlideElement) => void;
-}> = ({ elements, onEdit }) => {
+  onDelete: (index: number) => void;
+}> = ({ elements, onEdit, onDelete }) => {
   const t = useT(descriptionCardI18n);
 
   if (!elements || elements.length === 0) return null;
@@ -110,12 +123,29 @@ const ElementsPreview: React.FC<{
       return (
         <div 
           key={idx} 
-          onClick={() => onEdit(el)}
-          className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+          className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2 hover:ring-2 hover:ring-banana-400 transition-all group"
         >
-          <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-medium text-sm">
-            <BarChart3 size={16} />
-            <span>{chartName}{el.content ? `: ${el.content}` : ''}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-medium text-sm">
+              <BarChart3 size={16} />
+              <span>{chartName}{el.content ? `: ${el.content}` : ''}</span>
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onEdit(el)}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={() => onDelete(idx)}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
           {labels.length > 0 && (
             <div className="text-xs text-gray-600 dark:text-gray-400">
@@ -139,12 +169,29 @@ const ElementsPreview: React.FC<{
       return (
         <div 
           key={idx} 
-          onClick={() => onEdit(el)}
-          className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 space-y-2 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+          className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 space-y-2 hover:ring-2 hover:ring-banana-400 transition-all group"
         >
-          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium text-sm">
-            <Table size={16} />
-            <span>{t('elements.table')}</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium text-sm">
+              <Table size={16} />
+              <span>{t('elements.table')}</span>
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onEdit(el)}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={() => onDelete(idx)}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs border-collapse">
@@ -179,12 +226,29 @@ const ElementsPreview: React.FC<{
       return (
         <div 
           key={idx} 
-          onClick={() => onEdit(el)}
-          className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+          className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 hover:ring-2 hover:ring-banana-400 transition-all group"
         >
-          <div className="flex items-center gap-2 text-purple-700 dark:text-purple-400 font-medium text-sm">
-            <Image size={16} />
-            <span>{diagramName}{el.content ? `: ${el.content}` : ''}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-purple-700 dark:text:purple-400 font-medium text-sm">
+              <Image size={16} />
+              <span>{diagramName}{el.content ? `: ${el.content}` : ''}</span>
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onEdit(el)}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={() => onDelete(idx)}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -194,17 +258,34 @@ const ElementsPreview: React.FC<{
       return (
         <div 
           key={idx} 
-          onClick={() => onEdit(el)}
-          className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 cursor-pointer hover:ring-2 hover:ring-banana-400 transition-all"
+          className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 hover:ring-2 hover:ring-banana-400 transition-all group"
         >
-          <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-medium text-sm">
-            <TrendingUp size={16} />
-            <span>KPI: {el.kpi_label} = {el.kpi_value}</span>
-            {el.kpi_trend && (
-              <span className={`text-xs ${el.kpi_trend_color === 'green' ? 'text-green-600' : el.kpi_trend_color === 'red' ? 'text-red-600' : ''}`}>
-                {el.kpi_trend}
-              </span>
-            )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-medium text-sm">
+              <TrendingUp size={16} />
+              <span>KPI: {el.kpi_label} = {el.kpi_value}</span>
+              {el.kpi_trend && (
+                <span className={`text-xs ${el.kpi_trend_color === 'green' ? 'text-green-600' : el.kpi_trend_color === 'red' ? 'text-red-600' : ''}`}>
+                  {el.kpi_trend}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onEdit(el)}
+                className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                title="Edit"
+              >
+                <Edit2 size={12} />
+              </button>
+              <button
+                onClick={() => onDelete(idx)}
+                className="p-1 text-red-600 hover:bg-red-100 rounded"
+                title="Delete"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -257,6 +338,10 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
   const title = getDescriptionTitle(page.description_content);
   
   const [isEditing, setIsEditing] = useState(false);
+  const [localAiRefining, setLocalAiRefining] = useState(false);
+  const [showAiRefineInput, setShowAiRefineInput] = useState(false);
+  const [aiRefineInput, setAiRefineInput] = useState('');
+  const [enableWebSearch, setEnableWebSearch] = useState(true);
   const [editingElement, setEditingElement] = useState<SlideElement | null>(null);
   const [editContent, setEditContent] = useState('');
   const textareaRef = useRef<MarkdownTextareaRef>(null);
@@ -278,7 +363,15 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
 
   const handleEditReuseOutline = async () => {
     try {
-      const response = await reuseOutlineForDescription((projectId || '') as string, page.page_id);
+      if (!projectId || !page.page_id) {
+        showToast({
+          message: '页面信息不完整，无法复用大纲',
+          type: 'error'
+        });
+        return;
+      }
+
+      const response = await reuseOutlineForDescription(projectId, page.page_id);
       if (response.success) {
         showToast({
           message: '已成功复用大纲生成描述',
@@ -293,9 +386,10 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
           type: 'error'
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('复用大纲时发生错误:', error);
       showToast({
-        message: '复用大纲时发生错误',
+        message: error.message || '复用大纲时发生错误',
         type: 'error'
       });
     }
@@ -312,7 +406,7 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
     const currentDesc = page.description_content as any;
     const existingElements = currentDesc?.elements || [];
     const currentTitle = getDescriptionTitle(page.description_content);
-
+ 
     onUpdate({
       description_content: {
         text: editContent,
@@ -322,6 +416,53 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
       } as DescriptionContent,
     });
     setIsEditing(false);
+  };
+
+  const handleAiRefine = async () => {
+    if (!projectId || !page.page_id || !aiRefineInput.trim()) {
+      if (!projectId || !page.page_id) {
+        showToast({ message: '页面信息不完整，无法修改', type: 'error' });
+      }
+      return;
+    }
+
+    setLocalAiRefining(true);
+    try {
+      const response = await refinePageDescription(projectId, page.page_id, aiRefineInput, enableWebSearch);
+      if (response.success) {
+        onUpdate(response.data.page);
+        showToast({ message: '描述修改成功', type: 'success' });
+        setShowAiRefineInput(false);
+        setAiRefineInput('');
+      } else {
+        showToast({ message: response.message || '描述修改失败', type: 'error' });
+      }
+    } catch (error: any) {
+      console.error('描述修改失败:', error);
+      showToast({ message: error.message || '描述修改失败', type: 'error' });
+    } finally {
+      setLocalAiRefining(false);
+    }
+  };
+
+  const handleDeleteElement = async (elementIndex: number) => {
+    if (!projectId || !page.page_id) {
+      showToast({ message: '页面信息不完整，无法删除元素', type: 'error' });
+      return;
+    }
+
+    try {
+      const response = await deletePageElement(projectId, page.page_id, elementIndex, 'description');
+      if (response.success) {
+        onUpdate(response.data.page);
+        showToast({ message: '元素删除成功', type: 'success' });
+      } else {
+        showToast({ message: response.message || '元素删除失败', type: 'error' });
+      }
+    } catch (error: any) {
+      console.error('元素删除失败:', error);
+      showToast({ message: error.message || '元素删除失败', type: 'error' });
+    }
   };
 
   return (
@@ -373,7 +514,50 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
                   <Markdown>{text}</Markdown>
                 </div>
               )}
-              <ElementsPreview elements={elements} onEdit={setEditingElement} />
+              <ElementsPreview 
+                elements={elements} 
+                onEdit={setEditingElement}
+                onDelete={handleDeleteElement}
+              />
+              
+              {/* AI修改输入框 */}
+              {showAiRefineInput && (
+                <div className="mt-3 p-3 bg-banana-50 dark:bg-banana-900/20 rounded-lg border border-banana-200 dark:border-banana-800">
+                  <textarea
+                    value={aiRefineInput}
+                    onChange={(e) => setAiRefineInput(e.target.value)}
+                    placeholder={t('descriptionCard.refinePlaceholder')}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-banana-500 resize-none"
+                    rows={3}
+                  />
+                  <div className="flex items-center justify-between mt-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <input
+                        type="checkbox"
+                        checked={enableWebSearch}
+                        onChange={(e) => setEnableWebSearch(e.target.checked)}
+                        className="rounded border-gray-300 text-banana-500 focus:ring-banana-500"
+                      />
+                      {t('descriptionCard.enableWebSearch')}
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowAiRefineInput(false)}
+                        className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                      <button
+                        onClick={handleAiRefine}
+                        disabled={localAiRefining || !aiRefineInput.trim()}
+                        className="px-3 py-1.5 text-sm bg-banana-500 text-white rounded-lg hover:bg-banana-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {localAiRefining ? t('descriptionCard.refining') : t('descriptionCard.aiRefine')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="text-center py-8 text-gray-400 dark:text-foreground-tertiary">
@@ -385,6 +569,15 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
 
         {/* 操作栏 */}
         <div className="border-t border-gray-100 dark:border-border-primary px-4 py-3 flex justify-end gap-2 mt-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Sparkles size={16} />}
+            onClick={() => setShowAiRefineInput(!showAiRefineInput)}
+            disabled={generating}
+            title={t('descriptionCard.aiRefine')}
+          >
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -449,6 +642,10 @@ export const DescriptionCard: React.FC<DescriptionCardProps> = React.memo(({
           isOpen={!!editingElement}
           onClose={() => setEditingElement(null)}
           element={editingElement}
+          projectId={projectId}
+          pageId={page.page_id}
+          source="description"
+          elementIndex={elements.findIndex((el: SlideElement) => el === editingElement)}
           onSave={(updatedElement) => {
             const currentDesc = page.description_content as any;
             const existingElements = currentDesc?.elements || [];

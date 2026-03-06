@@ -9,7 +9,7 @@ import { useImagePaste } from '@/hooks/useImagePaste';
 // 组件内翻译
 const detailI18n = {
   zh: {
-    home: { title: '蕉幻' },
+    home: { title: '即幻' },
     detail: {
       title: "编辑页面描述", pageCount: "共 {{count}} 页", generateImages: "生成图片",
       generating: "生成中...", page: "第 {{num}} 页", titleLabel: "标题",
@@ -39,7 +39,7 @@ const detailI18n = {
     }
   },
   en: {
-    home: { title: 'Banana Slides' },
+    home: { title: 'Slides Now' },
     detail: {
       title: "Edit Descriptions", pageCount: "{{count}} pages", generateImages: "Generate Images",
       generating: "Generating...", page: "Page {{num}}", titleLabel: "Title",
@@ -97,7 +97,7 @@ export const DetailEditor: React.FC = () => {
   const t = useT(detailI18n);
   const { projectId } = useParams<{ projectId: string }>();
   const fromHistory = (location.state as any)?.from === 'history';
-  const importFileRef = useRef<HTMLInputElement>(null);
+
   const {
     currentProject,
     syncProject,
@@ -124,6 +124,7 @@ export const DetailEditor: React.FC = () => {
   const [descRequirements, setDescRequirements] = useState('');
   const [isDescReqDirty, setIsDescReqDirty] = useState(false);
   const reqTextareaRef = useRef<MarkdownTextareaRef>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
   const [isDescReqOpen, setIsDescReqOpen] = useState(
     () => localStorage.getItem('descReqOpen') !== 'false'
   );
@@ -209,6 +210,20 @@ export const DetailEditor: React.FC = () => {
     return () => { cancelled = true; };
   }, [projectId]);
 
+  // 检查页面是否有有效的描述内容
+  const hasValidDescription = useCallback((p: any): boolean => {
+    if (!p.description_content) return false;
+    if (typeof p.description_content === 'string') {
+      return p.description_content.trim().length > 0;
+    }
+    if (typeof p.description_content === 'object') {
+      return !!(p.description_content.text?.trim() ||
+               p.description_content.elements?.length > 0 ||
+               p.description_content.title?.trim());
+    }
+    return false;
+  }, []);
+
   // 加载项目数据
   useEffect(() => {
     if (projectId && (!currentProject || currentProject.id !== projectId)) {
@@ -217,12 +232,13 @@ export const DetailEditor: React.FC = () => {
     } else if (projectId && currentProject && currentProject.id === projectId) {
       // 如果项目已存在，也同步一次以确保数据是最新的（特别是从描述生成后）
       // 但只在首次加载时同步，避免频繁请求
-      const shouldSync = !currentProject.pages.some(p => p.description_content);
+      const pages = currentProject.pages || [];
+      const shouldSync = !pages.every(hasValidDescription);
       if (shouldSync) {
         syncProject(projectId);
       }
     }
-  }, [projectId, currentProject?.id]); // 只在 projectId 或项目ID变化时更新
+  }, [projectId, currentProject?.id, hasValidDescription]); // 只在 projectId 或项目ID变化时更新
 
   // 同步描述生成要求
   useEffect(() => {
@@ -283,7 +299,8 @@ export const DetailEditor: React.FC = () => {
   const handleRegeneratePage = async (pageId: string) => {
     if (!currentProject) return;
 
-    const page = currentProject.pages.find((p) => p.id === pageId);
+    const pages = currentProject.pages || [];
+    const page = pages.find((p) => p.id === pageId);
     if (!page) return;
 
     // 判断是否是 PPT 翻新模式
@@ -330,11 +347,11 @@ export const DetailEditor: React.FC = () => {
     handleRegeneratePageRef.current(pageId);
   }, []);
 
-  const handleAiRefineDescriptions = useCallback(async (requirement: string, previousRequirements: string[]) => {
+  const handleAiRefineDescriptions = useCallback(async (requirement: string, previousRequirements: string[], enableWebSearch: boolean) => {
     if (!currentProject || !projectId) return;
     
     try {
-      const response = await refineDescriptions(projectId, requirement, previousRequirements);
+      const response = await refineDescriptions(projectId, requirement, previousRequirements, enableWebSearch);
       await syncProject(projectId);
       show({ 
         message: response.data?.message || t('detail.messages.refineSuccess'), 
@@ -376,7 +393,8 @@ export const DetailEditor: React.FC = () => {
         show({ message: t('detail.messages.importEmpty'), type: 'error' });
         return;
       }
-      const startIndex = currentProject.pages.reduce((max, p) => Math.max(max, (p.order_index ?? 0) + 1), 0);
+      const pages = currentProject.pages || [];
+      const startIndex = pages.reduce((max, p) => Math.max(max, (p.order_index ?? 0) + 1), 0);
       await Promise.all(parsed.map(({ title, points, text: desc, part }, i) =>
         addPage(projectId, {
           outline_content: { title, points },
@@ -396,10 +414,9 @@ export const DetailEditor: React.FC = () => {
     return <Loading fullscreen message={t('detail.messages.loadingProject')} />;
   }
 
-  const hasAllDescriptions = currentProject.pages.every(
-    (p) => p.description_content
-  );
-  const missingDescCount = currentProject.pages.filter(p => !p.description_content).length;
+  const pages = currentProject.pages || [];
+  const hasAllDescriptions = pages.every((p) => p.description_content);
+  const missingDescCount = pages.filter(p => !p.description_content).length;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-background-primary flex flex-col">
@@ -425,7 +442,7 @@ export const DetailEditor: React.FC = () => {
               <span className="hidden sm:inline">{t('common.back')}</span>
             </Button>
             <div className="flex items-center gap-1.5 md:gap-2">
-              <span className="text-xl md:text-2xl">🍌</span>
+              <span className="text-xl md:text-2xl">🪄</span>
               <span className="text-base md:text-xl font-bold">{t('home.title')}</span>
             </div>
             <span className="text-gray-400 hidden lg:inline">|</span>
@@ -441,6 +458,7 @@ export const DetailEditor: React.FC = () => {
               disabled={isRenovationProcessing}
               className="!p-0 !bg-transparent !border-0"
               onStatusChange={setIsAiRefining}
+              showWebSearch={true}
             />
           </div>
 
@@ -519,6 +537,7 @@ export const DetailEditor: React.FC = () => {
               variant="primary"
               icon={<Sparkles size={16} className="md:w-[18px] md:h-[18px]" />}
               onClick={handleGenerateAll}
+              disabled={!(currentProject.pages || []).some(p => p.description_content)}
               className="flex-1 sm:flex-initial text-sm md:text-base"
             >
               {t('detail.batchGenerate')}
@@ -541,7 +560,7 @@ export const DetailEditor: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { handleExportDescriptions(); setFileMenuOpen(false); }}
-                    disabled={!currentProject.pages.some(p => p.description_content)}
+                    disabled={!(currentProject.pages || []).some(p => p.description_content)}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-600 dark:text-foreground-tertiary hover:bg-gray-50 dark:hover:bg-background-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
                   >
                     <Download size={14} />
@@ -550,7 +569,7 @@ export const DetailEditor: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { handleExportFull(); setFileMenuOpen(false); }}
-                    disabled={!currentProject.pages.some(p => p.description_content)}
+                    disabled={!(currentProject.pages || []).some(p => p.description_content)}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-600 dark:text-foreground-tertiary hover:bg-gray-50 dark:hover:bg-background-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
                   >
                     <Download size={14} />
@@ -570,8 +589,8 @@ export const DetailEditor: React.FC = () => {
             </div>
             <input ref={importFileRef} type="file" accept=".md,.txt" className="hidden" onChange={handleImportDescriptions} />
             <span className="text-xs md:text-sm text-gray-500 dark:text-foreground-tertiary whitespace-nowrap">
-              {currentProject.pages.filter((p) => p.description_content).length} /{' '}
-              {currentProject.pages.length} {t('detail.pagesCompleted')}
+              {(currentProject.pages || []).filter((p) => p.description_content).length} /{' '}
+              {(currentProject.pages || []).length} {t('detail.pagesCompleted')}
             </span>
           </div>
         </div>
@@ -634,7 +653,7 @@ export const DetailEditor: React.FC = () => {
             className="mb-4"
             showToast={show}
           />
-          {currentProject.pages.length === 0 && !isRenovationProcessing ? (
+          {(currentProject.pages || []).length === 0 && !isRenovationProcessing ? (
             <div className="text-center py-12 md:py-20">
               <div className="flex justify-center mb-4"><FileText size={48} className="text-gray-300" /></div>
               <h3 className="text-lg md:text-xl font-semibold text-gray-700 dark:text-foreground-secondary mb-2">
@@ -653,7 +672,7 @@ export const DetailEditor: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
-              {isRenovationProcessing && currentProject.pages.length === 0 ? (
+              {isRenovationProcessing && (currentProject.pages || []).length === 0 ? (
                 /* Placeholder skeleton cards while renovation creates pages */
                 Array.from({ length: renovationProgress?.total || 6 }).map((_, index) => (
                   <DescriptionCard
@@ -667,8 +686,14 @@ export const DetailEditor: React.FC = () => {
                   />
                 ))
               ) : (
-                currentProject.pages.map((page, index) => {
+                (currentProject.pages || []).map((page, index) => {
                 const pageId = page.id || page.page_id;
+
+                if (!pageId) {
+                  console.warn(`[DetailEditor] 页面 ${index} 缺少 page_id，跳过渲染`, page);
+                  return null;
+                }
+
                 // Renovation processing: treat pages without description as generating
                 const hasDescription = page.description_content && (
                   (typeof page.description_content === 'string' && page.description_content.trim()) ||

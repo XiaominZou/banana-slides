@@ -27,9 +27,9 @@ const homeI18n = {
       theme: { label: '主题模式', light: '浅色', dark: '深色', system: '跟随系统' }
     },
     home: {
-      title: '蕉幻',
+      title: '即幻',
       subtitle: 'Vibe your slides like vibe coding',
-      tagline: '基于 nano banana pro🍌 的原生 AI PPT 生成器',
+      tagline: 'Vibe your slides like vibe coding',
       features: {
         oneClick: '一句话生成 PPT',
         naturalEdit: '自然语言修改',
@@ -103,9 +103,9 @@ const homeI18n = {
       theme: { label: 'Theme', light: 'Light', dark: 'Dark', system: 'System' }
     },
     home: {
-      title: 'Banana Slides',
+      title: 'Slides Now',
       subtitle: 'Vibe your slides like vibe coding',
-      tagline: 'AI-native PPT generator powered by nano banana pro🍌',
+      tagline: 'Vibe your slides like vibe coding',
       features: {
         oneClick: 'One-click PPT generation',
         naturalEdit: 'Natural language editing',
@@ -657,12 +657,12 @@ export const Home: React.FC = () => {
             <div className="flex items-center">
               <img
                 src="/logo.png"
-                alt="蕉幻 Banana Slides Logo"
+                alt="即幻 Slides Now Logo"
                 className="h-10 md:h-12 w-auto rounded-lg object-contain"
               />
             </div>
             <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-banana-600 via-orange-500 to-pink-500 bg-clip-text text-transparent">
-              蕉幻
+              即幻
             </span>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
@@ -813,13 +813,17 @@ export const Home: React.FC = () => {
               backgroundSize: '200% auto',
               animation: 'gradient 3s ease infinite',
             }}>
-              {i18n.language?.startsWith('zh') ? `${t('home.title')} · Banana Slides` : 'Banana Slides'}
+              {i18n.language?.startsWith('zh') ? `${t('home.title')} · Slides Now` : 'Slides Now'}
             </span>
           </h1>
 
-          <p className="text-lg md:text-xl text-gray-600 dark:text-foreground-secondary max-w-2xl mx-auto font-light">
-            {t('home.subtitle')}
-          </p>
+          <div className="relative h-32 md:h-40 flex items-center justify-center">
+            <img
+              src="/logo2.png"
+              alt="Slides Now Logo"
+              className="h-full w-auto object-contain animate-float"
+            />
+          </div>
 
           {/* 特性标签 */}
           <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 pt-4">

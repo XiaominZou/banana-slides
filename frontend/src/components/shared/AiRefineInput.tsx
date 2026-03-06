@@ -8,14 +8,16 @@ const aiRefineI18n = {
     aiRefine: {
       ctrlEnterSubmit: "（Ctrl+Enter 提交）", history: "历史",
       viewHistory: "查看 {{count}} 条历史修改", previousRequirements: "之前的修改要求：",
-      submitTooltip: "提交 (Ctrl+Enter)"
+      submitTooltip: "提交 (Ctrl+Enter)",
+      enableWebSearch: "启用联网搜索"
     }
   },
   en: {
     aiRefine: {
       ctrlEnterSubmit: "(Ctrl+Enter to submit)", history: "History",
       viewHistory: "View {{count}} previous edits", previousRequirements: "Previous edit requests:",
-      submitTooltip: "Submit (Ctrl+Enter)"
+      submitTooltip: "Submit (Ctrl+Enter)",
+      enableWebSearch: "Enable Web Search"
     }
   }
 };
@@ -26,13 +28,15 @@ export interface AiRefineInputProps {
   /** 输入框占位文字 */
   placeholder: string;
   /** 提交回调函数，接收当前要求和历史要求，返回 Promise */
-  onSubmit: (requirement: string, previousRequirements: string[]) => Promise<void>;
+  onSubmit: (requirement: string, previousRequirements: string[], enableWebSearch: boolean) => Promise<void>;
   /** 是否禁用（例如没有内容可修改时） */
   disabled?: boolean;
   /** 自定义类名 */
   className?: string;
   /** 状态变化回调，通知父组件当前是否正在提交 */
   onStatusChange?: (isSubmitting: boolean) => void;
+  /** 是否显示联网搜索开关（默认true） */
+  showWebSearch?: boolean;
 }
 
 const AiRefineInputComponent: React.FC<AiRefineInputProps> = ({
@@ -42,21 +46,23 @@ const AiRefineInputComponent: React.FC<AiRefineInputProps> = ({
   disabled = false,
   className = '',
   onStatusChange,
+  showWebSearch = true,
 }) => {
   const t = useT(aiRefineI18n);
   const [requirement, setRequirement] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [enableWebSearch, setEnableWebSearch] = useState(true);
 
   const handleSubmit = async () => {
     if (!requirement.trim() || isSubmitting || disabled) return;
-
+    
     const currentRequirement = requirement.trim();
     setIsSubmitting(true);
     onStatusChange?.(true); // 通知父组件开始提交
     try {
-      await onSubmit(currentRequirement, history);
+      await onSubmit(currentRequirement, history, enableWebSearch);
       // 成功后将当前要求添加到历史
       setHistory(prev => [...prev, currentRequirement]);
       // 清空输入框
@@ -173,11 +179,26 @@ const AiRefineInputComponent: React.FC<AiRefineInputProps> = ({
           <Send size={16} className={isSubmitting ? 'animate-pulse' : ''} />
         </button>
       </div>
+
+      {/* 联网搜索开关 */}
+      {showWebSearch && (
+        <div className="mt-2">
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={enableWebSearch}
+              onChange={(e) => setEnableWebSearch(e.target.checked)}
+              className="rounded border-gray-300 text-purple-500 focus:ring-purple-500"
+            />
+            {t('aiRefine.enableWebSearch')}
+          </label>
+        </div>
+      )}
     </div>
   );
 };
 
 // 使用 memo 包装组件，避免父组件频繁重渲染时影响输入框
-// 只有当 props 真正变化时才重新渲染
+// 只有当 props 需要真正变化时才重新渲染
 export const AiRefineInput = memo(AiRefineInputComponent);
 
